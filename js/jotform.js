@@ -445,8 +445,8 @@ var JotForm = {
           _originalFormSubmitMethod.apply(this);
           return;
         }
-        const statck = new Error().stack || '';
-        const splitStack = statck.split('    at ');
+        const stack = new Error().stack || '';
+        const splitStack = stack.split('    at ');
         // Log methods calling form.submit()
         // to avoid possiblility of infinite loops, return void if form.submit() was called by the same function 4 times in a short timespan
         if (Array.isArray(splitStack) && splitStack.length > 2) {
@@ -536,8 +536,8 @@ var JotForm = {
         const stackTrace = newStack ? newStack.split('    at ').splice(2).join('\n') : '';
         trackExecution('observerSubmitHandler_received-submit-event');
         // create Observer's Immutable SubmitEvent.
-        /** @type {observer.observerSubmitEvent} */
         const observerSubmitEvent = {
+          id: generateUUID(formId),
           createdAt: new Date().getTime(),
           validationAttempts: 0,
           submitted: null,
@@ -583,6 +583,7 @@ var JotForm = {
                 stopImmediatePropagation() { logEventMethod('stopImmediatePropagation'); },
                 composedPath() { logEventMethod('composedPath'); },
                 get valid() { return _valid },
+                get eventId() { return observerSubmitEvent.id },
                 set valid(status) {
                   if (typeof status !== 'boolean' && status !== null) return;
                   const newStack = new Error().stack;
