@@ -1,7 +1,7 @@
+/* eslint-disable no-undef */
 /**
  * JotForm Form object
  */
-
 var JotForm = {
     /**
      * JotForm domain
@@ -362,6 +362,7 @@ var JotForm = {
     disableSubmitButtonMessage: '',
     isConditionDebugMode: false,
     totalLogCount: 0,
+    firstUrlPrefillCondition: false,
     isValidJotform(form) {
       if (!(form instanceof HTMLFormElement)) return false;
       if (!form.id) return false;
@@ -369,292 +370,299 @@ var JotForm = {
       return true;
     },
     EventObserver: (function intitalizeFormEventObserver() {
-      const searchParams = new URLSearchParams(window.location.search);
-      const isDebugEnabled = searchParams.get('debug') === '1';
-      const isObserverEnabledByUrlParam = searchParams.get('eventObserver') === '1';
+        const searchParams = new URLSearchParams(window.location.search);
+        const isDebugEnabled = searchParams.get('debug') === '1';
+        const isObserverEnabledByUrlParam = searchParams.get('eventObserver') === '1';
 
-      // feature flag --> window.enableEventObserver is set in buildsource.js
-      if (!(window.enableEventObserver || isObserverEnabledByUrlParam)) return null;
+        // feature flag --> window.enableEventObserver is set in buildsource.js
+        if (!(window.enableEventObserver || isObserverEnabledByUrlParam)) return null;
 
-      if(getQuerystring('offline_forms') === 'true') return null;
+        if(getQuerystring('offline_forms') === 'true') return null;
 
-      const CONST = {
-        SUBMIT_OBSERVER_NAME: 'submitObserverHandler'
-      };
+        const CONST = {
+            SUBMIT_OBSERVER_NAME: 'submitObserverHandler'
+        };
       
-      // EventObserver will overwrite "addEventListener" & "submit". Save original methods
-      const _originalFormAddEventListener = HTMLFormElement.prototype.addEventListener;
-      const _originalFormSubmitMethod = HTMLFormElement.prototype.submit;
+        // EventObserver will overwrite "addEventListener" & "submit". Save original methods
+        const _originalFormAddEventListener = HTMLFormElement.prototype.addEventListener;
+        const _originalFormSubmitMethod = HTMLFormElement.prototype.submit;
     
-      // create EventObserver
-      /** @type {observer.EventObserver} */
-      const EventObserver = {
-        [CONST.SUBMIT_OBSERVER_NAME]: null
-      };
-    
-      /** @type {observer.extendedAddEventListener} */
-      function extendedAddEventListner(eventKey, handler, options) {
-        // only extend new addEventListner to JOTFORM forms
-        // do not include CONST.SUBMIT_OBSERVER_NAME
-        if (isDebugEnabled) console.log({ eventKey, handler, options });
-        if (!JotForm.isValidJotform(this) || handler.name === CONST.SUBMIT_OBSERVER_NAME) {
-          _originalFormAddEventListener.apply(this, arguments);
-          return;
-        }
-        const newStack = new Error().stack;
-        const stack = newStack ? newStack.split('    at ').splice(2).join('\n') : '';
-        const name = (() => {
-          // anon functions from prototype.js will be named "responder"
-          if (handler.name && handler.name !== 'responder') return handler.name;
-          if (!stack) return 'anon-noStack';
-          if (stack.includes('for-widgets-server.js')) return 'forWidgetServer';
-          if (stack.includes('jquery-3.7.1')) return 'jqueryEventWrapper';
-          if (stack.includes('/vendor/maskedinput_')) return 'maskedInputWrapper';
-          return 'anon';
-        })();
-    
-        const order = (() => {
-          if (!options || typeof options === 'boolean') return 0;
-          if (typeof options === 'object' && typeof options.order === 'number') return options.order;
-          return 0;
-        })();
-    
-        const listener = {
-          eventKey,
-          name,
-          handler,
-          stack,
-          order
+        // create EventObserver
+        /** @type {observer.EventObserver} */
+        const EventObserver = {
+           [CONST.SUBMIT_OBSERVER_NAME]: null
         };
     
-        if (!EventObserver[this.id]) {
-          EventObserver[this.id] = {
-            form: this,
-            listeners: [],
-            submit: {},
-            submitDirect: {}
-          };
-        }
-
-        // add addEventListeners to listeners array.
-        EventObserver[this.id].listeners.push(listener);
-      }
-    
-      // Prevent others from bypassing submit process, ie form.submit()
-      /** @type {observer.preventFormSubmitMethod} */
-      function preventFormSubmitMethod() {
-        if (!JotForm.isValidJotform(this)) {
-          _originalFormSubmitMethod.apply(this);
-          return;
-        }
-        const stack = new Error().stack || '';
-        const splitStack = stack.split('    at ');
-        // Log methods calling form.submit()
-        // to avoid possiblility of infinite loops, return void if form.submit() was called by the same function 4 times in a short timespan
-        if (Array.isArray(splitStack) && splitStack.length > 2) {
-            const handlerName = splitStack[3];
-            const formId = this.id;
-            const formObserver = EventObserver[formId];
-            const submitDirect = formObserver.submitDirect[handlerName];
-            const invokedCount = typeof submitDirect === 'number' ? submitDirect + 1 : 0;
-            if (invokedCount > 4) {
-                if (isDebugEnabled) console.log(handlerName, 'Submit count is greater than 4 - returning void');
-                // reset error count and exit (to avoid inifinite loops)
-                window.JotForm.errorCatcherLog({ message: {
-                    stack,
-                    formId: formId,
-                    handler: handlerName
-                }}, 'EventObserver: form.submit() exceeded call amount');
-                formObserver.submitDirect[handlerName] = 0;
+        /** @type {observer.extendedAddEventListener} */
+        function extendedAddEventListner(eventKey, handler, options) {
+            // only extend new addEventListner to JOTFORM forms
+            // do not include CONST.SUBMIT_OBSERVER_NAME
+            if (isDebugEnabled) console.log({ eventKey, handler, options });
+            if (!JotForm.isValidJotform(this) || handler.name === CONST.SUBMIT_OBSERVER_NAME) {
+                _originalFormAddEventListener.apply(this, arguments);
                 return;
+            }
+            const newStack = new Error().stack;
+            const stack = newStack ? newStack.split('    at ').splice(2).join('\n') : '';
+            const name = (() => {
+                // anon functions from prototype.js will be named "responder"
+                if (handler.name && handler.name !== 'responder') return handler.name;
+                if (!stack) return 'anon-noStack';
+                if (stack.includes('for-widgets-server.js')) return 'forWidgetServer';
+                if (stack.includes('jquery-3.7.1')) return 'jqueryEventWrapper';
+                if (stack.includes('/vendor/maskedinput_')) return 'maskedInputWrapper';
+                return 'anon';
+            })();
+    
+            const order = (() => {
+              if (!options || typeof options === 'boolean') return 0;
+              if (typeof options === 'object' && typeof options.order === 'number') return options.order;
+              return 0;
+            })();
+    
+            const listener = {
+                eventKey,
+                name,
+                handler,
+                stack,
+                order
+            };
+    
+            if (!EventObserver[this.id]) {
+                EventObserver[this.id] = {
+                    form: this,
+                    listeners: [],
+                    submit: {},
+                    submitDirect: {}
+                };
+            }
+
+            // add addEventListeners to listeners array.
+            EventObserver[this.id].listeners.push(listener);
+        }
+    
+        // Prevent others from bypassing submit process, ie form.submit()
+        /** @type {observer.preventFormSubmitMethod} */
+        function preventFormSubmitMethod() {
+            if (!JotForm.isValidJotform(this)) {
+                _originalFormSubmitMethod.apply(this);
+                return;
+            }
+            const stack = new Error().stack || '';
+            const splitStack = stack.split('    at ');
+            // Log methods calling form.submit()
+            // to avoid possiblility of infinite loops, return void if form.submit() was called by the same function 4 times in a short timespan
+            if (Array.isArray(splitStack) && splitStack.length > 2) {
+                const handlerName = splitStack[3];
+                const formId = this.id;
+                const formObserver = EventObserver[formId];
+                const submitDirect = formObserver.submitDirect[handlerName];
+                const invokedCount = typeof submitDirect === 'number' ? submitDirect + 1 : 0;
+                if (invokedCount > 4) {
+                    if (isDebugEnabled) console.log(handlerName, 'Submit count is greater than 4 - returning void');
+                    // reset error count and exit (to avoid inifinite loops)
+                    window.JotForm.errorCatcherLog({ message: {
+                        stack,
+                        formId: formId,
+                        handler: handlerName
+                    }}, 'EventObserver: form.submit() exceeded call amount');
+                    formObserver.submitDirect[handlerName] = 0;
+                    return;
+                }
+            
+                const submitted = formObserver.submit && Object.values(formObserver.submit).find(submitInstance => Boolean(submitInstance.submitted));
+                if (isDebugEnabled) console.log({ handlerName, invokedCount });
+                if (submitted) {
+                    if (isDebugEnabled) console.log('Form submitted. Returning void.');
+                    return;
+                }
+            }
+        
+            // form.submit() will now send a new submit event instead of directly submitting the form.
+            if (isDebugEnabled) console.log('form.submit() was called on a jotform form', this, 'calling form.requestSubmit()');
+            if (typeof window.HTMLFormElement.prototype.requestSubmit === 'function') {
+                this.requestSubmit();
+            } else {    
+                _originalFormSubmitMethod.call(this)
             }
             
-            const submitted = formObserver.submit && Object.values(formObserver.submit).find(submitInstance => Boolean(submitInstance.submitted));
-            if (isDebugEnabled) console.log({ handlerName, invokedCount });
-            if (submitted) {
-                if (isDebugEnabled) console.log('Form submitted. Returning void.');
+        }
+
+        // overwrite addEventListener + submit event
+        HTMLFormElement.prototype.addEventListener = extendedAddEventListner;
+        HTMLFormElement.prototype.submit = preventFormSubmitMethod;
+    
+        // util for submit logging
+        /** @type {observer.addLogEvent} */
+        function addLogEvent({ id, stack, info, observerSubmitEvent }) {
+            observerSubmitEvent.log.push({
+                timestamp: new Date().getTime(),
+                id,
+                info,
+                ...(stack ? { stack } : {})
+            });
+        }
+    
+        /** @type {observer.validateSubmitEvent} */
+        function validateObserverSubmitEvent({ id, observerSubmitEvent }) {
+            addLogEvent({ id, observerSubmitEvent, info: 'Validation Started' });
+            observerSubmitEvent.validationAttempts += 1;
+            const formObserver = observerSubmitEvent.formObserver;
+    
+            const invalidEvents = Object.values(observerSubmitEvent.listeners).filter(listener => {
+                if (listener.valid === null || listener.valid) return false;
+                return true;
+            });
+            const noInvalidEvents = invalidEvents.length === 0;
+    
+            const noPreviousSubmits = Object.values(formObserver.submit).filter(submitEvent => {
+                return submitEvent.submitted;
+            }).length === 0;
+    
+            const validSubmit = noInvalidEvents && noPreviousSubmits;
+            if (!validSubmit) {
+                addLogEvent({ id, observerSubmitEvent, info: 'Validation Complete. Invalid Submit.\nNumber of invalid events: ' + invalidEvents.length + '.\nPreviously submitted: ' +  !noPreviousSubmits + '.'});
                 return;
             }
+            observerSubmitEvent.submitted = true;
+            observerSubmitEvent.submittedAt = new Date().getTime().toString();
+            trackExecution('observerSubmitHandler_validation-passed-submitting-form');
+            addLogEvent({ id, observerSubmitEvent, info: 'Validation Complete. Valid Submit.' });
+            // form.submit() will be called directly.
+            _originalFormSubmitMethod.apply(formObserver.form);
         }
-        
-        // form.submit() will now send a new submit event instead of directly submitting the form.
-        if (isDebugEnabled) console.log('form.submit() was called on a jotform form', this, 'calling form.requestSubmit()');
-        this.requestSubmit();
-      }
 
-      // overwrite addEventListener + submit event
-      HTMLFormElement.prototype.addEventListener = extendedAddEventListner;
-      HTMLFormElement.prototype.submit = preventFormSubmitMethod;
-    
-      // util for submit logging
-      /** @type {observer.addLogEvent} */
-      function addLogEvent({ id, stack, info, observerSubmitEvent }) {
-        observerSubmitEvent.log.push({
-          timestamp: new Date().getTime(),
-          id,
-          info,
-          ...(stack ? { stack } : {})
-        });
-      }
-    
-      /** @type {observer.validateSubmitEvent} */
-      function validateObserverSubmitEvent({ id, observerSubmitEvent }) {
-        addLogEvent({ id, observerSubmitEvent, info: 'Validation Started' });
-        observerSubmitEvent.validationAttempts += 1;
-        const formObserver = observerSubmitEvent.formObserver;
-    
-        const invalidEvents = Object.values(observerSubmitEvent.listeners).filter(listener => {
-          if (listener.valid === null || listener.valid) return false;
-          return true;
-        })
-        const noInvalidEvents = invalidEvents.length === 0;
-    
-        const noPreviousSubmits = Object.values(formObserver.submit).filter(submitEvent => {
-          return submitEvent.submitted;
-        }).length === 0;
-    
-        const validSubmit = noInvalidEvents && noPreviousSubmits;
-        if (!validSubmit) {
-          addLogEvent({ id, observerSubmitEvent, info: 'Validation Complete. Invalid Submit.\nNumber of invalid events: ' + invalidEvents.length + '.\nPreviously submitted: ' +  !noPreviousSubmits + '.'});
-          return;
-        }
-        observerSubmitEvent.submitted = true;
-        observerSubmitEvent.submittedAt = new Date().getTime().toString();
-        trackExecution('observerSubmitHandler_validation-passed-submitting-form');
-        addLogEvent({ id, observerSubmitEvent, info: 'Validation Complete. Valid Submit.' });
-        // form.submit() will be called directly.
-        _originalFormSubmitMethod.apply(formObserver.form);
-      }
+        // this function will receieve the real submit event and dispatch local "validation" events to the listeners. 
+        /** @type {observer.handlerSubmitEvent} */
+        function eventObserverSubmitHandler(originalEvent, formId) {
+            const formObserver = EventObserver[formId];
+            if (!formObserver) return;
 
-      // this function will receieve the real submit event and dispatch local "validation" events to the listeners. 
-      /** @type {observer.handlerSubmitEvent} */
-      function eventObserverSubmitHandler(originalEvent, formId) {
-        const formObserver = EventObserver[formId];
-        if (!formObserver) return;
+            // stop submit event from invoking POST request
+            originalEvent.preventDefault();
+            const newStack = new Error().stack;
+            const stackTrace = newStack ? newStack.split('    at ').splice(2).join('\n') : '';
+            trackExecution('observerSubmitHandler_received-submit-event');
+            // create Observer's Immutable SubmitEvent.
+            const observerSubmitEvent = {
+                id: generateUUID(formId),
+                createdAt: new Date().getTime(),
+                validationAttempts: 0,
+                submitter: originalEvent.submitter || null,
+                submitted: null,
+                submittedAt: null,
+                listeners: {},
+                log: [],
+                get stack() { return stackTrace },
+                get formObserver() { return formObserver }
+            };
 
-        // stop submit event from invoking POST request
-        originalEvent.preventDefault();
-        const newStack = new Error().stack;
-        const stackTrace = newStack ? newStack.split('    at ').splice(2).join('\n') : '';
-        trackExecution('observerSubmitHandler_received-submit-event');
-        // create Observer's Immutable SubmitEvent.
-        const observerSubmitEvent = {
-          id: generateUUID(formId),
-          createdAt: new Date().getTime(),
-          validationAttempts: 0,
-          submitted: null,
-          submittedAt: null,
-          listeners: {},
-          log: [],
-          get stack() { return stackTrace },
-          get formObserver() { return formObserver }
+            // add Observer's SubmitEvent to global EventObserver
+            const eventIndex = Object.keys(formObserver.submit).length;
+            formObserver.submit[eventIndex] = observerSubmitEvent;
+
+            // get form submit listeners & add them to Observer's SubmitEvent
+            formObserver.listeners.forEach(function addListener(listener, index) {
+                if (listener.eventKey !== 'submit') return;
+                const listenerName = listener.name + '_' + index;
+    
+                // copy global listener + create new "validation" event for each listener
+                /** @type {observer.listenerInstance} */
+                const createListenerInstance = () => {
+
+                    // util to log methods called from listener
+                    function logEventMethod(methodName) {
+                        const newStack = new Error().stack;
+                        const stack = newStack ? newStack.split('    at ').splice(2).join('\n') : '';
+                        addLogEvent({ id: listenerName, observerSubmitEvent, info: `${methodName}() invoked`, stack });
+                    }
+                    let _valid = null;
+                    return {
+                        name: listenerName,
+                        eventKey: listener.eventKey,
+                        handler: listener.handler,
+                        order: listener.order,
+                        get valid() { return _valid },
+                        event: {
+                            stop() { logEventMethod('stop'); },
+                            // add logs to see if listener is calling methods from original submit event
+                            // listeners should only use "valid" property
+                            preventDefault() { logEventMethod('preventDefault'); },
+                            stopPropagation() { logEventMethod('stopPropagation'); },
+                            stopImmediatePropagation() { logEventMethod('stopImmediatePropagation'); },
+                            composedPath() { logEventMethod('composedPath'); },
+                            get valid() { return _valid },
+                            get submitter() { return observerSubmitEvent.submitter },
+                            get eventId() { return observerSubmitEvent.id },
+                            set valid(status) {
+                                if (typeof status !== 'boolean' && status !== null) return;
+                                const newStack = new Error().stack;
+                                const stack = newStack ? newStack.split('    at ').splice(2).join('\n') : '';
+                                if (_valid === status) {
+                                    addLogEvent({ id: listenerName, stack, observerSubmitEvent, info: 'valid already set to: ' + status });
+                                    return;
+                                }
+                                _valid = status;
+                                addLogEvent({ id: listenerName, observerSubmitEvent, stack, info: 'valid: ' + status });
+                  
+                                if (!observerSubmitEvent.validationAttempts) return;
+                                if (observerSubmitEvent.submitted) return;
+                                validateObserverSubmitEvent({ id: listenerName, observerSubmitEvent });
+                            }
+                        }
+                    }
+                };
+    
+                // add new listenerInstance to Oberserer's SubmitEvent
+                observerSubmitEvent.listeners[listenerName] = createListenerInstance()
+            });
+    
+            // sort listeners by order
+            const orderedEventListeners = Object.values(observerSubmitEvent.listeners).sort((a, z) => {
+                return a.order - z.order;
+            });
+    
+            // Run all Observer's SubmitEvent listeners
+            orderedEventListeners.forEach(listener => {
+                if (typeof listener.handler !== 'function') return;
+    
+                addLogEvent({ id: listener.name, observerSubmitEvent, info: listener.name + ': start' });
+
+                try {
+                    // pass new validation event to listener
+                    listener.handler.call(formObserver.form, listener.event);
+                } catch (error) {
+                    addLogEvent({ id: listener.name, observerSubmitEvent,  info: 'Error: Failed in try catch.', stack: String(error) });
+                }
+                addLogEvent({ id: listener.name, observerSubmitEvent, info: listener.name + ': end' });
+            });
+  
+            // run validateObserverSubmitEvent after calling all listeners
+            validateObserverSubmitEvent({ id: 'Observer', observerSubmitEvent });
         };
 
-         // add Observer's SubmitEvent to global EventObserver
-         const eventIndex = Object.keys(formObserver.submit).length;
-         formObserver.submit[eventIndex] = observerSubmitEvent;
-
-        // get form submit listeners & add them to Observer's SubmitEvent
-        formObserver.listeners.forEach(function addListener(listener, index) {
-          if (listener.eventKey !== 'submit') return;
-          const listenerName = listener.name + '_' + index;
-    
-          // copy global listener + create new "validation" event for each listener
-          /** @type {observer.listenerInstance} */
-          const createListenerInstance = () => {
-
-            // util to log methods called from listener
-            function logEventMethod(methodName) {
-              const newStack = new Error().stack;
-              const stack = newStack ? newStack.split('    at ').splice(2).join('\n') : '';
-              addLogEvent({ id: listenerName, observerSubmitEvent, info: `${methodName}() invoked`, stack });
-            }
-            let _valid = null;
-            return {
-              name: listenerName,
-              eventKey: listener.eventKey,
-              handler: listener.handler,
-              order: listener.order,
-              get valid() { return _valid },
-              event: {
-                stop() { logEventMethod('stop'); },
-                // add logs to see if listener is calling methods from original submit event
-                // listeners should only use "valid" property
-                preventDefault() { logEventMethod('preventDefault'); },
-                stopPropagation() { logEventMethod('stopPropagation'); },
-                stopImmediatePropagation() { logEventMethod('stopImmediatePropagation'); },
-                composedPath() { logEventMethod('composedPath'); },
-                get valid() { return _valid },
-                get eventId() { return observerSubmitEvent.id },
-                set valid(status) {
-                  if (typeof status !== 'boolean' && status !== null) return;
-                  const newStack = new Error().stack;
-                  const stack = newStack ? newStack.split('    at ').splice(2).join('\n') : '';
-                  if (_valid === status) {
-                    addLogEvent({ id: listenerName, stack, observerSubmitEvent, info: 'valid already set to: ' + status });
-                    return;
-                  }
-                  _valid = status;
-                  addLogEvent({ id: listenerName, observerSubmitEvent, stack, info: 'valid: ' + status });
-                  
-                  if (!observerSubmitEvent.validationAttempts) return;
-                  if (observerSubmitEvent.submitted) return;
-                  validateObserverSubmitEvent({ id: listenerName, observerSubmitEvent });
-                }
-              }
-            }
-          };
-    
-          // add new listenerInstance to Oberserer's SubmitEvent
-          observerSubmitEvent.listeners[listenerName] = createListenerInstance()
+        // Rename 'submitEventHandler' function name to CONST.SUBMIT_OBSERVER_NAME.
+        // CONST.SUBMIT_OBSERVER_NAME will be ignored by new "addEventListener" to recieve the form's original dispatched submit event.
+        Object.defineProperty(eventObserverSubmitHandler, 'name', {
+            enumerable: false,
+            configurable: false,
+            writable: false,
+            value: CONST.SUBMIT_OBSERVER_NAME
         });
     
-        // sort listeners by order
-        const orderedEventListeners = Object.values(observerSubmitEvent.listeners).sort((a, z) => {
-          return a.order - z.order;
-        });
-    
-        // Run all Observer's SubmitEvent listeners
-        orderedEventListeners.forEach(listener => {
-          if (typeof listener.handler !== 'function') return;
-    
-          addLogEvent({ id: listener.name, observerSubmitEvent, info: listener.name + ': start' });
+        EventObserver.getLatestSubmitLog = () => {
+            const form = document.querySelector('form.jotform-form');
+            if (!(form instanceof HTMLFormElement)) return null;
 
-          try {
-            // pass new validation event to listener
-            listener.handler.call(formObserver.form, listener.event);
-          } catch (error) {
-            addLogEvent({ id: listener.name, observerSubmitEvent,  info: 'Error: Failed in try catch.', stack: String(error) });
-          }
-          addLogEvent({ id: listener.name, observerSubmitEvent, info: listener.name + ': end' });
-        });
-  
-        // run validateObserverSubmitEvent after calling all listeners
-        validateObserverSubmitEvent({ id: 'Observer', observerSubmitEvent });
-      };
+            const formObserver = JotForm.EventObserver[form.id];
+            if (!formObserver || !formObserver.submit || !Object.keys(formObserver.submit).length) return null;
+            const lastInstance = formObserver.submit[Object.keys(formObserver.submit).length - 1];
+            if (!lastInstance) return null;
+            return lastInstance.log;
+        };
 
-      // Rename 'submitEventHandler' function name to CONST.SUBMIT_OBSERVER_NAME.
-      // CONST.SUBMIT_OBSERVER_NAME will be ignored by new "addEventListener" to recieve the form's original dispatched submit event.
-      Object.defineProperty(eventObserverSubmitHandler, 'name', {
-        enumerable: false,
-        configurable: false,
-        writable: false,
-        value: CONST.SUBMIT_OBSERVER_NAME
-      });
-    
-      EventObserver.getLatestSubmitLog = () => {
-        const form = document.querySelector('form.jotform-form');
-        if (!(form instanceof HTMLFormElement)) return null;
-
-        const formObserver = JotForm.EventObserver[form.id];
-        if (!formObserver || !formObserver.submit || !Object.keys(formObserver.submit).length) return null;
-        const lastInstance = formObserver.submit[Object.keys(formObserver.submit).length - 1];
-        if (!lastInstance) return null;
-        return lastInstance.log;
-      };
-
-      EventObserver[CONST.SUBMIT_OBSERVER_NAME] = eventObserverSubmitHandler;
-      return EventObserver;
+        EventObserver[CONST.SUBMIT_OBSERVER_NAME] = eventObserverSubmitHandler;
+        return EventObserver;
     })(),
     encryptAll  : function(e, callback) {
         e.stop();
@@ -798,8 +806,13 @@ var JotForm = {
             }
 
             if (window.formHelperAgentProp) {
-                const {agentHeaderBackgroundColor, avatarIconLink, ...rest} = JSON.parse(window.formHelperAgentProp);
-                helperAgentProps = {...helperAgentProps, background: agentHeaderBackgroundColor, avatarURL:avatarIconLink, ...rest}
+                const {agentHeaderBackgroundColor, avatarIconLink, agentRenderURL, ...rest} = JSON.parse(window.formHelperAgentProp);
+                if (!rest.loggedInUser || (rest.loggedInUser && !rest.loggedInUser.name && !rest.loggedInUser.username)) {
+                  nameInputListenerForAssistantTooltip();
+                };
+
+                putChatIDInForm(new URL(agentRenderURL).origin);
+                helperAgentProps = {...helperAgentProps, background: agentHeaderBackgroundColor, avatarURL:avatarIconLink, agentRenderURL, ...rest}
             }
 
             window.agentInitialized = true;
@@ -811,13 +824,15 @@ var JotForm = {
                 const startButton = document.querySelector(startButtonQuery);
                 if (startButton) {
                     startButton.addEventListener('click', () => {
-                        window.AgentInitializer.init(helperAgentProps);
+                        const agentMethods = window.AgentInitializer.init(helperAgentProps);
+                        window.embeddedAgentMethods = agentMethods;
                     });
                 }
             }
             else {
-                window.AgentInitializer.init(helperAgentProps);
-            }
+                const agentMethods = window.AgentInitializer.init(helperAgentProps);
+                window.embeddedAgentMethods = agentMethods;
+              }
         }
     },
 
@@ -1027,6 +1042,14 @@ var JotForm = {
                 }
 
                 trackExecution('init-started');
+
+                // bugfix: If user goes back to form after submit, submit button may be stuck on please wait.
+                // performance.getEntriesByType('navigation') can determine if page was loaded from cache
+                const navigationPerformanceEntry =  performance && performance.getEntriesByType && performance.getEntriesByType('navigation')[0];
+                const pageType = navigationPerformanceEntry && navigationPerformanceEntry.type;
+                if (pageType === "back_forward") {
+                    JotForm.enableButtons();
+                }
 
                 if (window.FS) {
                   window.onFSError = () => this.initEmbeddedAgent();
@@ -1272,6 +1295,14 @@ var JotForm = {
                     window.parent.postMessage("removeIframeOnloadAttr", '*');
                 }
 
+                if(getQuerystring('itemCatalog') === '1') {
+                    const hasPaymentInLegacy = Boolean(document.querySelector('[data-payment="true"]'));
+                    const hasPaymentInCard = Boolean(document.querySelector('[data-payment="newpayment"]'));
+                    if (hasPaymentInLegacy || hasPaymentInCard) {
+                        this.loadStyleSheet('../css/styles/payment/payment_ai_catalog.css');
+                    }
+                }
+
                 var inputSimpleFpc = document.querySelector('input[name="simple_fpc"]');
                 if (inputSimpleFpc) {
                     this.payment = inputSimpleFpc.getAttribute('data-payment_type');
@@ -1497,6 +1528,7 @@ var JotForm = {
                 this.handleSignatureEvents();
                 this.handleSignSignatureInputs();
                 this.handleFITBInputs();
+                this.setupFormSettledEvent();
                 if (JotForm.newDefaultTheme || JotForm.extendsNewTheme) {
                     // createNewComponent(data-type, function).render()
                     // createNewComponent({ selector: '.form-radio + label', type: 'field' }, this.initRadioInputV2).render();
@@ -1527,6 +1559,13 @@ var JotForm = {
                 // if there is a donation field
                 if (document.querySelector('input[id*="_donation"]')) {
                     this.handleDonationAmount();
+                }
+                // if there is a custom price field for subscription
+                if (document.querySelector('input[id*="_custom_price"]')
+                    && window.paymentType === 'subscription'
+                    && typeof this.validateCustomPriceField !== 'undefined'
+                ) {
+                    this.validateCustomPriceField();
                 }
                 //disable submit if nosubmit=true on request parameters
                 if (getQuerystring('nosubmit')) {
@@ -2231,7 +2270,9 @@ var JotForm = {
                 return height;
             }
             window.parent.postMessage('setHeight:' + height + ':' + form.id, '*');
-            this.postHeightForOEmbed(height);
+            if (typeof this.postHeightForOEmbed !== "undefined") {
+                this.postHeightForOEmbed(height);
+            }
         }
     },
     fixIESubmitURL: function () {
@@ -2895,7 +2936,7 @@ var JotForm = {
                                 } else {
                                     uploadedFiles = uploadedFiles.concat(JSON.parse(uploadedFileInput.value));
                                 }
-                                uploadedFiles.push(filename);
+                                uploadedFiles.push(uploadHiddenInput.value);
                                 uploadedFileInput.value = JSON.stringify(uploadedFiles);
                             }
                             var fileServerInput = document.getElementById('file_server');
@@ -2916,9 +2957,13 @@ var JotForm = {
                             var uploadedFileID = ['uploadNewForSACL', field].join('-');
                             var uploadedFile = $(uploadedFileID);
                             var uplodedFileArray = uploadedFile ? JSON.parse(uploadedFile.value) : [];
-                            if (uplodedFileArray.includes(filename)){
+                            var deletedFile = filename;
+                            if (JotForm.uploadServerURL) {
+                                deletedFile = $(id).value;
+                            }
+                            if (uplodedFileArray.includes(deletedFile)){
                                 const filteredUplodedFileArray = uplodedFileArray.filter(function (item) {
-                                    return item !== filename;
+                                    return item !== deletedFile;
                                 });
                                 if (filteredUplodedFileArray.length < 1){
                                     $(uploadedFileID).remove();
@@ -2935,7 +2980,7 @@ var JotForm = {
                                 } else {
                                     deletedFiles = deletedFiles.concat(JSON.parse(deletedFileInput.value));
                                 }
-                                deletedFiles.push(filename);
+                                deletedFiles.push(deletedFile);
                                 deletedFileInput.value = JSON.stringify(deletedFiles);
                             }
                         }
@@ -5343,6 +5388,7 @@ var JotForm = {
 
         setTimeout(function(){
             if(!(document.getElementById('draftID'))){
+                JotForm.firstUrlPrefillCondition = false;
                 JotForm.runAllConditions();
             }
         }, 1500);
@@ -6176,8 +6222,13 @@ var JotForm = {
                 if (document.querySelector('#id_' + field).triggerEvent && !dontTrigger && dataChanged) document.querySelector('#id_' + field).triggerEvent('change');
             } else if (type == "select") {
                 if (document.querySelector('#input_' + field)) {
-                    document.querySelector('#input_' + field).value = defaultValue;
-                    if (document.querySelector('#input_' + field).triggerEvent && !dontTrigger) document.querySelector('#input_' + field).triggerEvent('change');
+                    if (!JotForm.firstUrlPrefillCondition && !document.querySelector('#input_' + field).value) {
+                        document.querySelector('#input_' + field).value = defaultValue;
+                    } else if (JotForm.firstUrlPrefillCondition) {
+                        document.querySelector('#input_' + field).value = defaultValue;
+                        if (document.querySelector('#input_' + field).triggerEvent && !dontTrigger) document.querySelector('#input_' + field).triggerEvent('change');
+                    }
+                    JotForm.firstUrlPrefillCondition = true;
                 } else { //select matrices
                     document.querySelector("#id_" + field).querySelectorAll('select').forEach(function (element) {
                         if (element.getAttribute('data-component') !== 'mixed-dropdown') {
@@ -6515,8 +6566,8 @@ var JotForm = {
             return "";
         }
         let h = "";
-        const hourElement = document.querySelector(`#hour_${id}`)
-        const ampmElement = document.querySelector(`#ampm_${id}`)
+        const hourElement = document.querySelector(`#input_${id}_hourSelect`)
+        const ampmElement = document.querySelector(`#input_${id}_ampm`)
         if (ampmElement) {
             if (hourElement) {
                 h = hourElement.value;
@@ -6534,7 +6585,7 @@ var JotForm = {
                 date += "T" + ((h.length == 1 ? "0" + h : h) || "00");
             }
         }
-        const minElement = document.querySelector(`#min_${id}`);
+        const minElement = document.querySelector(`#input_${id}_minuteSelect`);
         if (minElement) {
             date += ":" + (minElement.value || "00");
         }
@@ -6625,8 +6676,10 @@ var JotForm = {
                 switch (fieldType) {
                     case "combined":
                         if (['isEmpty', 'isFilled'].include(term.operator)) {
-                            filled = $$('#id_' + term.field + ' input,' + '#id_' + term.field + ' select').collect(function (e) {
-                                return e.getAttribute('type') === 'checkbox' || e.getAttribute('type') === 'radio' ? (e.checked ? e.value : '') : e.value;
+                            filled = $$('#id_' + term.field + ' input,' + '#id_' + term.field + ' select')
+                                .filter(e => e.getAttribute('type') !== 'hidden')
+                                .collect(function (e) {
+                                    return e.getAttribute('type') === 'checkbox' || e.getAttribute('type') === 'radio' ? (e.checked ? e.value : '') : e.value;
                             }).any();
 
                             if (JotForm.checkValueByOperator(term.operator, term.value, filled)) {
@@ -6640,7 +6693,7 @@ var JotForm = {
                         } else {
                             //for matrices
                             value = $$('#id_' + term.field + ' input,' + '#id_' + term.field + ' select').collect(function (e) {
-                                return e.getAttribute('type') === 'checkbox' ? (e.checked ? e.value : '') : e.value;
+                                return e.getAttribute('type') === 'checkbox' || e.getAttribute('type') === 'radio' ? (e.checked ? e.value : '') : e.value;
                             });
                             if (JotForm.checkValueByOperator(term.operator, term.value, value)) {
                                 any = true;
@@ -6749,13 +6802,13 @@ var JotForm = {
                                 if(term.operator === "equalDay" || term.operator === "notEqualDay") {
                                     termValue = JotForm.getDayOfWeek(JotForm.strToDate(year+"-"+month+"-"+day));
                                 } else {
-                                    termValue = year+"-"+month+"-"+day;
+                                    termValue = JotForm.getDateValue(anotherField);
                                 }
 
                             }
 
-                            if (['equalDate', 'notEqualDate', 'after'].include(term.operator)) {
-                                if (JotForm.checkValueByOperator(term.operator, JotForm.strToDate(termValue), JotForm.strToDate(value.split('T')[0]))) {
+                            if (['equalDate', 'notEqualDate', 'before', 'after'].include(term.operator)) {
+                                if (JotForm.checkValueByOperator(term.operator, JotForm.strToDate(termValue), JotForm.strToDate(value))) {
                                     any = true;
                                 } else {
                                     all = false;
@@ -7760,6 +7813,17 @@ var JotForm = {
 
     widgetsAsCalculationOperands: [],
 
+    requireWidget: function (qid, req) {
+        var referrer = document.getElementById("customFieldFrame_" + qid) ? document.getElementById("customFieldFrame_" + qid).src : false;
+        if (referrer) {
+            var frame = (navigator.userAgent.indexOf("Firefox") != -1 && typeof getIframeWindow !== 'undefined') ? getIframeWindow(window.frames["customFieldFrame_" + qid]) : window.frames["customFieldFrame_" + qid];
+            var isFrameXDready = (!$("customFieldFrame_" + qid).hasClassName('frame-xd-ready') && !$("customFieldFrame_" + qid).retrieve('frame-xd-ready')) ? false : true;
+            if (frame && isFrameXDready) {
+                XD.postMessage(JSON.stringify({type: 'required', qid, req}), referrer, frame);
+            }
+        }
+    },
+    
     /*
      * Require or Unrequire a field
      */
@@ -7775,6 +7839,10 @@ var JotForm = {
         var elements = [];
         if (subfieldID) {
             elements = $$('#id_' + qid + ' input[id$=-' + subfieldID + '], #id_' + qid + ' textarea[id$=-' + subfieldID + '], #id_' + qid + ' select[id$=-' + subfieldID + ']');
+            
+            if (window.FORM_MODE == 'cardform' && $('input_' + qid + '_field_' + subfieldID) && $('input_' + qid + '_field_' + subfieldID).hasClassName("js-forMixed")) {
+                elements = $$('#id_' + qid + ' input[id$=_' + subfieldID + '], #id_' + qid + ' textarea[id$=_' + subfieldID + '], #id_' + qid + ' select[id$=_' + subfieldID + ']');
+            }
         } else {
             elements = $$('#id_' + qid + ' input, #id_' + qid + ' textarea, #id_' + qid + ' select');
         }
@@ -7848,6 +7916,10 @@ var JotForm = {
                 el.addClassName('validate[' + validations.join(',') + ']');
             }
             JotForm.setFieldValidation(el);
+
+            if (JotForm.getInputType(qid) == 'widget'){
+                JotForm.requireWidget(qid, req);
+            }
         });
 
         // signature
@@ -9889,9 +9961,11 @@ var JotForm = {
         }
 
         const ignoreFields = ['time', 'datetime', 'text'];
+        const ignoreFieldsPayment = ignoreFields.slice(0, -1); // text prevents 'get price from' from working #20174771
+        const ignoreFieldsList = Boolean(JotForm.payment || window.paymentType) ? ignoreFieldsPayment : ignoreFields;
         const operands = (calc.operands && calc.operands.split(',')) || [];
         const baseFieldsForLoop = (calc.baseField && calc.baseField.split(',')) || [];
-        const ignoreFieldCalculationLoopCheck = Boolean(([...baseFieldsForLoop, ...operands]).find(operand => ignoreFields.includes(JotForm.getInputType(operand))));
+        const ignoreFieldCalculationLoopCheck = Boolean(([...baseFieldsForLoop, ...operands]).find(operand => ignoreFieldsList.includes(JotForm.getInputType(operand))));
         const checkCalculationInfiniteLoop = this.loopMapExist || ignoreFieldCalculationLoopCheck;
         if (checkCalculationInfiniteLoop && (infiniteLoop() || calculationInfiniteLoop())) {
             if (JotForm.isConditionDebugMode) {
@@ -10468,7 +10542,27 @@ var JotForm = {
 
         });
     },
-
+    /*
+     * Handle subscription payment custom price field
+     */
+    validateCustomPriceField: function () {
+        var customPrice = document.querySelectorAll('input[id*="_custom_price"]');
+        if (customPrice && customPrice.length > 0) {
+            customPrice.forEach(function (element) {
+                var preventChangeReadonly = element.hasAttribute('readonly') || false;
+                element.addEventListener('input', function () {
+                    if (preventChangeReadonly) {
+                        return;
+                    }
+                });
+                if (preventChangeReadonly) {
+                    element.addEventListener('keydown', function () {
+                        element.readOnly = true;
+                    });
+                }
+            });
+        }
+    },
     /*
      * Handles payment donations
      */
@@ -10476,6 +10570,7 @@ var JotForm = {
     handleDonationAmount: function () {
         // donation amount input
         var donationField = JotForm.donationField = document.querySelector('input[id*="_donation"]');
+        const preventChangeReadonly = donationField.hasAttribute('readonly') || false;
         // default
         JotForm.paymentTotal = donationField.value || 0;
         // observe changes
@@ -10498,12 +10593,19 @@ var JotForm = {
         // }
         donationField.addEventListener('input', function () {
             var donationRegex = new RegExp(/^([0-9]{0,15})(\.[0-9]{0,2})?$/);
+            if (preventChangeReadonly) return;
             if (this.value.match(donationRegex)) {
                 JotForm.paymentTotal = prevInput = this.value;
             } else {
                 JotForm.paymentTotal = this.value = prevInput;
             }
         });
+        // if change readonly from inspect, it will activate readonly again
+        if (preventChangeReadonly){
+            donationField.addEventListener('keydown', function () {
+                donationField.readOnly = true;
+            });
+        }
         // if donation gets its amount from a calculation widget
         if (donationField.getAttribute('data-custom-amount-field') > 0) {
             JotForm.donationSourceField = document.querySelector(`#input_${donationField.getAttribute('data-custom-amount-field')}`);
@@ -11524,11 +11626,6 @@ var JotForm = {
         ) {
             document.querySelector('.form-payment-discount').remove();
         }
-        /* //* clean subs amount area
-        if(document.querySelector('.form-payment-recurringpayments .form-payment-label') && document.querySelector('.form-payment-amount')){
-            document.querySelector('.form-payment-amount').remove();
-            document.querySelector('.form-payment-recurringpayments .form-payment-label').style.display = 'flex';
-        } */
         $H(prices).each(function (pair) {
             var subproduct = false;  // is this a subproduct?
             var parentProductKey;    // subproduct's parent key (see http://www.jotform.com/help/264-Create-Sub-Products-Based-on-a-Product-Option)
@@ -11961,7 +12058,7 @@ var JotForm = {
             }
 
             // prepare subscription discount texts and values
-            if (window.paymentType === 'subscription' && document.getElementById(pair.key).checked) {
+            if (window.paymentType === 'subscription' && pair.key && document.getElementById(pair.key) && document.getElementById(pair.key).checked) {
                 function getDiscountedVal(val, firstOrAll) {
                     if (rate && type && discount[2]) {
                         var reduce = type === 'fixed' ? rate : roundAmount(((rate / 100) * parseFloat(val)));
@@ -11979,7 +12076,7 @@ var JotForm = {
                     return val;
                 }
 
-                if (pair.value.firstPaymentVal) {
+                if (pair.value.firstPaymentVal || pair.value.firstPaymentPrice === 'custom') {
                     if ($(pair.key + '_custom_first_payment_price')) {
                         firstPaymentVal = $(pair.key + '_custom_first_payment_price').getValue();
                     } else {
@@ -11994,28 +12091,30 @@ var JotForm = {
                     recurringVal = getDiscountedVal(recurringVal, 'all');
                 }
 
-                var recurPaymentContainer = document.querySelector('.form-payment-recurringpayments');
+                const recurPaymentContainer = document.querySelector('.form-payment-subscriptionprices');
+                if (recurPaymentContainer) {
+                    const paymentUtils = new PaymentUtils();
+                    // reset prices
+                    const amountEl = document.querySelectorAll('.form-payment-amount');
+                    if (amountEl.length > 0) { amountEl.forEach(e => e.remove()); }
+                    const totalText = document.querySelector('.form-payment-total');
+                    if (totalText) { totalText.remove(); }
 
-                if (recurPaymentContainer && recurPaymentDiscount) {
-                    var discountHTML = recurPaymentContainer.innerHTML.replace(/Total|Total:/, 'Discount:').replace('payment_recurringpayments', 'discount_recurringpayments').replace('<span>', '<span> - ');
-
-                    var spanEl = document.createElement('span');
-                    spanEl.className = 'form-payment-discount';
-                    spanEl.innerHTML = discountHTML.replace('id="total-text"', '');
-                    JotForm.discounts.container = spanEl;
-
-                    recurPaymentContainer.insertAdjacentElement('beforebegin', JotForm.discounts.container);
-                    // JotForm.discounts.container.down('.form-payment-price > span').prepend('-');
-                    $('discount_recurringpayments').update(parseFloat(recurPaymentDiscount).formatMoney(decimal, dSeparator, tSeparator));
-                }
-
-                /* if (recurPaymentContainer && (recurPaymentDiscount || firstPaymentDiscount)) {
-                    const getHTML = (label, text, isPrice = false, type='discount') => {
-                        return `<div class=${type === 'discount' ? 'form-discount-container' : 'form-amount-container'}>
-                                    <div>${label}</div>
+                    const getHTML = (label, text, type, isPrice) => {
+                        function getCurrencySymbolForText(preOrNext) {
+                            const currencySymbol = paymentUtils.getCurrencySymbolByCode();
+                            const preCond = preOrNext === 'pre' && currencySymbol.length === 1;
+                            const nextCond = preOrNext === 'next' && currencySymbol.length > 1;
+                            return preCond || nextCond ? currencySymbol : '';
+                        };
+                        const _text = isPrice ? `${getCurrencySymbolForText('pre')}${parseFloat(text).formatMoney(decimal, dSeparator, tSeparator)}${getCurrencySymbolForText('next')}` : text;
+                        return `<div class='form-amount-container'>
+                                    <div class='form-${type}-price-label'>${label}</div>
                                     <div class="form-payment-price">
-                                        <span data-wrapper-react="true">${isPrice ? '$' : ''}
-                                            <span>${isPrice ? parseFloat(text).formatMoney(decimal, dSeparator, tSeparator) : text}</span>
+                                        <span data-wrapper-react="true">
+                                            <span class='${type}'>
+                                                ${_text}
+                                            </span>
                                         </span>
                                     </div>
                                 </div>`
@@ -12023,45 +12122,35 @@ var JotForm = {
 
                     JotForm.discounts.container = new Element('div', { 'class': 'form-payment-discount' });
                     const amountsContainer = new Element('div', { 'class': 'form-payment-amount' });
-                    let discountsHTML = '';
                     let amountsHTML = '';
 
-                    //* first payment discount
-                    if(firstPaymentDiscount){
-                        discountsHTML += getHTML('First Payment Discount', firstPaymentDiscount, true, 'discount')
+                    // first payment amount
+                    let fpAmountVal = firstPaymentVal === 0 && pair.value.trial_unit === 0 ? recurringVal : firstPaymentVal;
+                    const gatewaysWithFreeTrial = ['square', 'cybersource'];
+                    if (gatewaysWithFreeTrial.includes(JotForm.payment)) {
+                        fpAmountVal = pair.value.trial_unit === 0 ? fpAmountVal : 0;
                     }
+                    amountsHTML +=  getHTML('TODAY’S TOTAL:', fpAmountVal, 'first-payment', true);
+                    // recurring payment amount
+                    const subsPeriodConfig = paymentUtils.getSubscriptionPeriodConfig(pair.value.recurrence_interval, String(pair.value.recurrence_unit));
+                    amountsHTML +=  getHTML(`${subsPeriodConfig ? subsPeriodConfig.keys[0] : ''}&nbsp;Recurring Total:`, recurringVal, 'recur-payment', true);
 
-                    //* recurring payment discount
-                    if(recurPaymentDiscount){
-                        discountsHTML += getHTML(firstPaymentDiscount ? 'Recurring Payment Discount' : 'Discount', recurPaymentDiscount, true, 'discount')
+                    // custom number of recurring payments
+                    const productSelector = window.FORM_MODE === 'cardform' ? `.product.product--subscription[data-pid="${pair.key.split('_').pop()}"]` : `.form-product-item[pid="${pair.key.split('_').pop()}"]`;
+                    const product = document.querySelector(productSelector);
+                    const customRecurDropdown = product && product.querySelector('.custom-recurring-payments');
+                    if (customRecurDropdown) {
+                        const customRecurVal = customRecurDropdown.value === 'unlimited' ? 'Unlimited' : `x${customRecurDropdown.value}`;
+                        amountsHTML +=  getHTML('Number of Payments:', customRecurVal, 'custom-recurring');
                     }
-
-                    //* recurrence interval
-                    if(pair.value.recurrence_interval){
-                        discountsHTML += getHTML('Recurrence', pair.value.recurrence_interval, false, 'discount')
-                    }
-
-                    //* coupon code
-                    if(document.querySelector('#coupon-input') && document.querySelector('#coupon-input').value){
-                        discountsHTML += getHTML('Applied Coupon Code', document.querySelector('#coupon-input').value, false, 'discount')
-                    }
-
-                    if(pair.value.recurring){
-                        //* first payment amount
-                        amountsHTML +=  getHTML('First Payment Amount', subTotal, true, 'amount')
-                    }
-
-                    //* recurring payment amount
-                    amountsHTML +=  getHTML(isSetupFee ? 'Recurring Payment Amount':'Total', recurringVal, true, 'amount')
-
-
-                    JotForm.discounts.container.insert(discountsHTML);
-                    amountsContainer.insert(amountsHTML)
+                    amountsContainer.insert(amountsHTML);
                     recurPaymentContainer.insertAdjacentElement('beforebegin', JotForm.discounts.container);
-                    recurPaymentContainer.insert(amountsContainer)
+                    recurPaymentContainer.insert(amountsContainer);
 
-                    document.querySelector('.form-payment-recurringpayments .form-payment-label').style.display = 'none';
-                } */
+                    if (window.FORM_MODE === 'cardform') {
+                        recurPaymentContainer.style.display = 'block';
+                    }
+                }
             }
 
           if($(pair.key) || JotForm.couponApplied){
@@ -12559,7 +12648,7 @@ var JotForm = {
 
                 $(pair.value.specialPriceField).observe('change', function () {
                     setTimeout(countSpecialTotal, 50);
-                    triggerAssociatedElement(this);
+                    // triggerAssociatedElement(this);
                 });
                 $(pair.value.specialPriceField).observe('keyup', function () {
                     setTimeout(countSpecialTotal, 50);
@@ -16583,6 +16672,12 @@ var JotForm = {
         JotForm.nextPage = false;
         input = $(input);
 
+        try {
+            if (window.AgentInitializer && window.agentInitialized && window.embeddedAgentMethods && window.embeddedAgentMethods.setTooltip) {
+                window.embeddedAgentMethods.setTooltip('You need help with that?', { withPulse: true, pulseType: 'error', timeout: 5000 });
+            }
+         } catch (error) {}
+
         if (input.errored) {
             return false;
         }
@@ -16727,6 +16822,10 @@ var JotForm = {
             return;
         }
 
+        if (JotForm.isPaymentSelected() && container.select('.form-subproduct-quantity.form-validation-error').length > 0) {
+            return;
+        }
+        
         if (
             JotForm.paymentFields.indexOf($(container).readAttribute('data-type')) > -1 &&
             typeof PaymentStock !== 'undefined' &&
@@ -17050,21 +17149,6 @@ var JotForm = {
                         }));
                     }
 
-                    if (!window.agentHelperChatID) {
-                        var agentHelperIframe = document.getElementById('form-agent-helper');
-                        if (agentHelperIframe) {
-                            var iframeWindow = agentHelperIframe.contentWindow;
-                            var agentHelperID = iframeWindow.chatID;
-                            if (agentHelperID) {
-                                form.appendChild(createHiddenInputElement({
-                                    name: 'agentHelperChatID',
-                                    value: agentHelperID
-                                }));
-                                window.agentHelperChatID = agentHelperID;
-                            }
-                        }   
-                    }
-
                     if (window.location.href.includes('agentImplementationID') && !window.agentImplementationID) {
                         var agentQueryString = window.location.search;
                         var agentUrlParams = new URLSearchParams(agentQueryString);
@@ -17222,8 +17306,7 @@ var JotForm = {
                 }
 
                 var numberOfInputs = form.querySelectorAll('.form-all input, select').length;
-                var pciLimit = ['bluesnap', 'cybersource'].includes(JotForm.payment) && numberOfInputs > 1000;
-                if (numberOfInputs > 3000 || pciLimit){ // to bypass max_input_vars - 3000 limit
+                if (numberOfInputs > 4500){ // to bypass max_input_vars - 4500 limit for v3, 9K for pci
                   JotForm.removeNonselectedProducts(form);
                 }
 
@@ -17455,7 +17538,7 @@ var JotForm = {
                 }
             });
             JotForm.encryptAll(e, function(submitForm) {
-                if (submitForm) {
+                if (submitForm || JotForm.EventObserver) {
                     // Check if there are conditions for redirection
                     if (Object.keys(redirectConditions).length > 0) {
                         appendHiddenInput('redirectConditions', JSON.stringify(redirectConditions));
@@ -17667,11 +17750,27 @@ var JotForm = {
             }
 
 
+            // Fill In The Blanks Validation / "control_inline"
             if (JotForm.getContainer(input).getAttribute('data-type') === "control_inline" && !deep) {
-                var validatedFitbInputs = JotForm.getContainer(input).querySelectorAll('input[class*="validate"],select[class*="validate"]');
-                if (Array.from(validatedFitbInputs).map(function (subInput) {
-                    return subInput.validateInput ? subInput.validateInput(true) : input.validateInput(true);
-                }).every(function(e) { return e; })) {
+                const allInputs = JotForm.getContainer(input).querySelectorAll('input[class*="validate"],select[class*="validate"]');
+                const isEveryInputValid = Array.from(allInputs).every((element) => {
+                    // handle validation for Fill In The Blanks - Select Elements
+                    if (element instanceof HTMLSelectElement) {
+                        const placeHolderText = element.ariaLabel;
+                        const options = Array.from(element.querySelectorAll('option'));
+                        const selectedOption = options.find(option => Boolean(option.value && option.selected));
+                        if (!selectedOption) {
+                            return JotForm.errored(element, JotForm.texts.required);
+                        }
+                        const selectedOptionIsFirst = options.indexOf(selectedOption) === 0;
+                        // current selected option is placeholder. Normally "Please select"
+                        if (selectedOptionIsFirst && selectedOption.value === placeHolderText) {
+                            return JotForm.errored(element, JotForm.texts.required);
+                        }
+                    }
+                    return element.validateInput ? element.validateInput(true) : input.validateInput(true)
+                });
+                if (isEveryInputValid) {
                     return JotForm.corrected(input);
                 }
                 return false;
@@ -19516,6 +19615,7 @@ var JotForm = {
       questions.each(function(question) {
         if (question) {
           switch (question.type) {
+            case 'control_paypalcomplete':
             case 'control_chargify':
               var email = $this.hasQuestion(questions, 'control_email');
               if (email !== false) {
@@ -19525,7 +19625,9 @@ var JotForm = {
 
                 emails[0].observe('blur', function (e) {
                   if ( e.target.value ) {
-                    $$('.cc_email')[0].value = e.target.value;
+                      if ($$('.cc_email').length > 0 && $$('.cc_email')[0].disabled === false) {
+                          $$('.cc_email')[0].value = e.target.value;
+                      }
                   };
                 });
               }
@@ -19554,8 +19656,8 @@ var JotForm = {
                 var mollieField = $$('.form-line[data-type="control_mollie"]')[0];
 
                 // **** For email fields ****
-                if (isEmailFieldExist !== false) {
-                    var emailFields = $$('input[type="email"]');
+                var emailFields = $$('input[type="email"]');
+                if (isEmailFieldExist !== false && emailFields && emailFields.length > 0) {
                     var latestEmailValues = {}; // We will keep the latest values of fields.
 
                     emailFields[0].observe('blur', function (e) {
@@ -19579,8 +19681,8 @@ var JotForm = {
                 }
 
                 // **** For address fields ****
-                if (isAddressFieldExist !== false) {
-                    var addressFields = $$('.form-line[data-type="control_address"]');
+                var addressFields = $$('.form-line[data-type="control_address"]');
+                if (isAddressFieldExist !== false && addressFields && addressFields.length > 0) {
                     var inputs = $(addressFields[0]).select('input, select');
                     var latestAddressValues = {}; // We will keep the latest values of fields.
 
@@ -19780,6 +19882,9 @@ var JotForm = {
 
             if (typeof(script.addEventListener) != 'undefined') {
                 script.addEventListener('load', callback, false);
+                script.addEventListener('error', function() {
+                    JotForm.errorCatcherLog({ message: { src: script.src }}, 'JOTFORM_JS_LOAD_SCRIPT_ERROR');
+                });
             } else {
                 //for IE8
                 var handleScriptStateChangeIE8 = function () {
@@ -20759,6 +20864,36 @@ var JotForm = {
         return window.JotForm.livePrefillEnabled && token.length === 36 && JotForm.livePrefillTokenSuffixes.includes(token.slice(-4));
     },
 
+    setupFormSettledEvent: () => {
+      const isPrefill = !!JotForm.getPrefillToken();
+      const isSACL = !!(window.JFForm && window.JFForm.draftID);
+      const hasAppointment = !!document.querySelector('[data-type=control_appointment]');
+      let count = 0 + Number(isSACL) + Number(isPrefill) + Number(hasAppointment);
+
+      const checkIsFormSetteled = () => {
+        if (count !== 0) {
+          count--;
+          return;
+        };
+        document.dispatchEvent(new Event('FormSettled'));
+        window.parent.postMessage('formSettled', '*');
+        document.removeEventListener('PrefillCompleted', checkIsFormSetteled);
+        document.removeEventListener('SACLCompleted', checkIsFormSetteled);
+        document.removeEventListener('AppointmentSettled', checkIsFormSetteled);
+      }
+
+      if (isPrefill) {
+        document.addEventListener('PrefillCompleted', checkIsFormSetteled);
+      }
+      if (isSACL) {
+        document.addEventListener('SACLCompleted', checkIsFormSetteled);
+      }
+      if (hasAppointment) {
+        document.addEventListener('AppointmentSettled', checkIsFormSetteled);
+      }
+      checkIsFormSetteled();
+    },
+
     initPrefills: function() {
         var prefillToken = JotForm.getPrefillToken();
         var isManualPrefill = getQuerystring('jf_createPrefill') == '1';
@@ -21568,6 +21703,14 @@ function isIframeEmbedFormPure() {
     }
 }
 
+function isIframeEmbedFormForCanva() {
+    try {
+        return document.referrer === "https://canva-embed.com/";
+    } catch (e) {
+        return false;
+    }
+}
+
 function callIframeHeightCaller() {
     if (!JotForm.iframeHeightCaller) {
         return;
@@ -21583,7 +21726,10 @@ if(isIframeEmbedForm()) {
 }
 
 if (isIframeEmbedFormPure()) {
-    document.querySelector('html').addClassName('isEmbeded');
+    var formHtmlElement = document.querySelector('html').addClassName('isEmbeded');
+    if (isIframeEmbedFormForCanva()) {
+        formHtmlElement.addClassName('canvaEmbeded');
+    }
     document.addEventListener('DOMContentLoaded', function() {
         document.querySelectorAll('img[loading=lazy]').forEach(function(image) {
             image.addEventListener('load', callIframeHeightCaller);
@@ -22057,3 +22203,69 @@ function generateUUID(formID) {
 
 // We have to put this event because it's the only way to catch FB load
 window.fbAsyncInit = JotForm.FBInit.bind(JotForm);
+
+function putChatIDInForm(agentOrigin) {
+  window.addEventListener('message', ({ data, origin }) => {
+      if (origin !== agentOrigin || !data || typeof data.chatID !== 'string' || !data.chatID) return;
+
+      try {
+        const agentHelperID = data.chatID;;
+        const agentHelperInput = createHiddenInputElement({ name: 'agentHelperChatID', value: agentHelperID });
+        const form = document.querySelector('form.jotform-form');
+        if (!form) return;
+        form.appendChild(agentHelperInput);
+        window.agentHelperChatID = agentHelperID;
+      } catch (e) {
+        console.error(e);
+      }
+  });
+}
+
+function nameInputListenerForAssistantTooltip() {
+  try {
+    const nameField = document.querySelector('li[data-type="control_fullname"]');
+    if (!nameField) {
+        return;
+    }
+
+    const questionID = nameField.getAttribute('id').replace('id_', '');
+    const firstNameField = nameField.querySelector(`#first_${questionID}`);
+    let timeoutID;
+
+    const focusHandler = () => {
+        clearTimeout(timeoutID);
+    }
+
+    const blurHandler = (event) => {
+        clearTimeout(timeoutID);
+        timeoutID = setTimeout(() => {
+            const firstName = event.target.value;
+            if (!firstName) {
+              return;
+            }
+            const capitalizedFirstName = `${firstName.charAt(0).toUpperCase()}${firstName.slice(1)}`;
+
+            try {
+                if (window.embeddedAgentMethods && window.embeddedAgentMethods.showUserGreetingTooltip && window.embeddedAgentMethods.postMessageToAgent) {
+                    const firstNameWord = capitalizedFirstName.trim().split(' ')[0];
+
+                    window.embeddedAgentMethods.showUserGreetingTooltip({
+                    userName: firstNameWord,
+                    interval: 60000,
+                    timeoutForEachTooltip: 4000
+                    });
+                    window.embeddedAgentMethods.postMessageToAgent({ action: 'greet-user', text: firstNameWord }, '*');
+                }
+            } catch (error) {}
+
+            firstNameField.removeEventListener('blur', blurHandler);
+            firstNameField.removeEventListener('focus', focusHandler);    
+        }, 5000);
+    }
+    firstNameField.addEventListener('blur', blurHandler);
+    firstNameField.addEventListener('focus', focusHandler);
+  }
+  catch (e)  {
+      console.log(e);
+  }
+}
