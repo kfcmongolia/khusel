@@ -6172,7 +6172,7 @@ var JotForm = {
             if (subfield) {
                 var TIMESTAMP_OF_2019 = 1546300000000;
                 var isNewIDType = Number(subfield) < TIMESTAMP_OF_2019; // old: 1546312345678-firstname / new: firstname-12
-                selector = isNewIDType ? 'input[id$=-' + subfield + '], select[id$=-' + subfield + ']' : 'input[id*=' + subfield + '-], select[id*=' + subfield + '-]'
+                selector = isNewIDType ? 'input[id$="-' + subfield + '"], select[id$="-' + subfield + '"]' : 'input[id*=' + subfield + '-], select[id*=' + subfield + '-]'
             }
             document.querySelector('#id_' + field).querySelectorAll(selector).forEach(function (el) {
                 if (['radio', 'checkbox'].indexOf(el.type) > -1) {
