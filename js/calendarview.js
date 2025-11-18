@@ -655,36 +655,34 @@ Calendar.prototype = {
   },
 
   setDynamicLimits: function() {
+    function getComparativeDate(dateString) {
+      // Match dynamic date strings like "today+9" or "today-3"
+      const match = dateString.match(/^today([+-])(\d+)$/i);
 
-    var getComparativeDate = function(dat) {
-      var todayKey = dat.indexOf('today') > -1 ? /today/ : new RegExp(Calendar.TODAY.trim(), 'i');
-      if(todayKey.test(dat)) {
-        var comp = new Date();
-        var offset = parseInt(dat.replace(/\s/g, "").split(todayKey)[1]) || 0;
-        comp.setDate(comp.getDate() + offset);
+      // If it’s not a dynamic string, just return it as-is (YYYY-MM-DD)
+      if (!match) return dateString;
 
-        var getUnselectedDaysCount = function (){
-          var curDate = new Date();
-          var unselectedDaysCount = 0;
-          while (curDate <= comp) {
-            var dayName = curDate.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
-            if (lim.days[dayName] !== undefined && lim.days[dayName] === false){
-              unselectedDaysCount++;
-            }
+      const [_fullMatch, operator = '+', valueStr = "0"] = match;
+      const daysCount = parseInt(valueStr, 10) || 0;
+      const endDate = new Date();
 
-            curDate.setDate(curDate.getDate() + 1);
-          }
-          return unselectedDaysCount;
-        }
+      let count = 0;
 
-        if (lim.countSelectedDaysOnly) {
-          comp.setDate(comp.getDate() + getUnselectedDaysCount());
-        }
-        return comp.getFullYear()+"-"+JotForm.addZeros(comp.getMonth()+1, 2)+"-"+JotForm.addZeros(comp.getDate(), 2);
-      } else {
-        return dat;
+      while (count < daysCount) {
+        // Go to the next day, either back or forward depending on the operator
+        endDate.setDate(endDate.getDate() + (operator === '-' ? -1 : 1));
+
+        // Get the day of the week - Ensure the correct locale to match the lim.days
+        const dayName = endDate.toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase();
+
+        // Count increments only if the day is selectable
+        if (!lim.countSelectedDaysOnly || lim.days[dayName]) count++;
       }
+
+      // Return the dateString as YYYY-MM-DD
+      return endDate.getFullYear()+"-"+JotForm.addZeros(endDate.getMonth() + 1, 2)+"-"+JotForm.addZeros(endDate.getDate(), 2);
     }
+
     var lim = this.limits
     lim.start = getComparativeDate(lim.start);
     lim.end = getComparativeDate(lim.end);
