@@ -26374,6 +26374,12 @@ var JotForm = {
             return;
         }
 
+        JotForm.conditions = [];
+        document.querySelectorAll('.always-hidden, .form-field-hidden').forEach(el => {
+            const id = el.getAttribute('id').split('_')[1];
+            JotForm.showField(id);
+        });
+
         if (!document.getElementById('highlight-question-styles')) {
             const style = document.createElement('style');
             style.id = 'highlight-question-styles';
@@ -26445,7 +26451,7 @@ var JotForm = {
                     document.querySelectorAll('.matched-question').forEach(el => {
                         el.classList.remove('matched-question');
                     });
-                    
+
                     const questions = data.questions;
                     questions.forEach(question => {
                         const questionElement = document.getElementById('id_' + question);
