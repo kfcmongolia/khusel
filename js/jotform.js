@@ -8124,7 +8124,7 @@ Object.extend(document, {
         contentClass:false, // CSS class of the content box
         buttonsClass:false, // CSS class of the buttons box
         closeButton:'X', // Close button content, can be replaced with an image
-        fullScreenButton: '<img src="images/wizard-fullscreen.png" style="width:18px; height:18px;" class="fullscreen-wiz" title="Full Screen">',
+        fullScreenButton: '<img src="assets/v3/images/wizard-fullscreen.png" style="width:18px; height:18px;" class="fullscreen-wiz" title="Full Screen">',
         allowFullScreen:false, //allow the wizard to be fullscreened
         defaultFullScreen:false, //open in fullscreen
         openEffect:true, // Enable/Disable the effect on opening
@@ -8438,7 +8438,7 @@ Object.extend(document, {
                 }
                 fullScreened = !fullScreened;
             }
-            
+
         }
 
         $(document.body).insert(win);
@@ -8667,7 +8667,7 @@ Protoplus.ui = {
             if (options.className !== "edit-option") {
                 currentValue = currentValue.unescapeHTML();
             }
-            
+
             currentValue = (currentValue == options.defaultText)? "" : currentValue;
             //currentValue = options.escapeHTML? currentValue.escapeHTML() : currentValue;
             currentValue = options.processBefore(currentValue, elem);
@@ -8908,7 +8908,7 @@ Protoplus.ui = {
                     liItem.addClassName('context-menu-item-disabled');
                 }
                 if(item.items){
-                    liItem.insert('<img align="right" src="images/right-handle.png" style="margin-top:2px;" />');
+                    liItem.insert('<img align="right" src="assets/v3/images/right-handle.png" style="margin-top:2px;" />');
                     createInnerList(liItem, item);
                 }
 
@@ -9859,7 +9859,7 @@ Protoplus.ui = {
             defaultText:"Search",
             onWrite:Prototype.K,
             onClear:Prototype.K,
-            imagePath:"images/apple_search.png"
+            imagePath:"assets/v3/images/apple_search.png"
         }, options || {});
 
         element.observe("keyup", function(e){
@@ -9955,11 +9955,11 @@ Protoplus.ui = {
             onUpdate:Prototype.K,
             maxValue:100,
             value:0,
-            buttonBack:'url("../images/ball.png") no-repeat scroll 0px 0px transparent'
+            buttonBack:'url("/assets/v3/images/ball.png") no-repeat scroll 0px 0px transparent'
         }, options || {});
 
         if("JotForm" in window && "url" in JotForm){
-            options.buttonBack = 'url("'+JotForm.url+'images/ball.png") no-repeat scroll 0px 0px transparent';
+            options.buttonBack = 'url("'+JotForm.url+'assets/v3/images/ball.png") no-repeat scroll 0px 0px transparent';
         }
 
         var valueToPixel = function(value){
@@ -10156,7 +10156,7 @@ Protoplus.ui = {
             value:false,
             allowEmpty:false,
             size: 5,
-            imgPath: 'images/',
+            imgPath: 'assets/v3/images/',
             onChange: Prototype.K
         }, options || {});
 
@@ -10177,7 +10177,7 @@ Protoplus.ui = {
             }
         }
         //check negative if minimum is not set
-        else if (!options.allowNegative && parseFloat(element.value) < 0) 
+        else if (!options.allowNegative && parseFloat(element.value) < 0)
         {
             element.value = '0';
         }
@@ -10234,7 +10234,7 @@ Protoplus.ui = {
             var newValue = parseFloat(element.value)-parseFloat(options.addAmount);
             if(options.minValue) { // Don't go below to minValue
                 if(Number(newValue) < Number(options.minValue)){ return; }
-            }  
+            }
             else if(!options.allowNegative && newValue < 0){ return; } // Don't go negative
             element.value = newValue;
             options.onChange(element.value);
@@ -10457,9 +10457,9 @@ Protoplus.ui = {
             hideOnBlur: false,
             buttonClass:'big-button buttons'
         }, options || {});
-        
+
         var customColorHex;
-        
+
         $(options.trigger || element).observe('click', function(){
             var docEvent = false;
 
@@ -10930,7 +10930,7 @@ Protoplus.ui = {
             overflow:0,
             onResize: Prototype.K,
             onResizeEnd: Prototype.K,
-            imagePath:'images/resize.png',
+            imagePath:'assets/v3/images/resize.png',
             element:false,
             maxHeight:false,
             minHeight:false,
@@ -11515,7 +11515,7 @@ Protoplus.ui = {
             var li = document.createElement('li');
             li.setAttribute("value",opt.value.strip(opt.value.stripTags()));
             li.innerHTML = opt.text.escapeHTML();
-            
+
             if(opt.hasClassName("bold")) {
                 li.setStyle('color:#555; font-weight:bold;');
             }
@@ -11611,6 +11611,7 @@ Protoplus.ui = {
     }
 };
 Element.addMethods(Protoplus.ui);
+
 /// <reference path="../../types/types.d.ts" />
 /**
  * JotForm Form object
@@ -11987,6 +11988,7 @@ var JotForm = {
     },
     EventObserver: (function intitalizeFormEventObserver() {
         const searchParams = new URLSearchParams(window.location.search);
+        const isChatgptApp = searchParams.get('app') === 'chatgpt';
         const isDebugEnabled = searchParams.get('debug') === '1';
         const isObserverEnabledByUrlParam = searchParams.get('eventObserver') === '1';
 
@@ -12096,7 +12098,7 @@ var JotForm = {
 
             // form.submit() will now send a new submit event instead of directly submitting the form.
             if (isDebugEnabled) console.log('form.submit() was called on a jotform form', this, 'calling form.requestSubmit()');
-            if (typeof window.HTMLFormElement.prototype.requestSubmit === 'function') {
+            if (typeof window.HTMLFormElement.prototype.requestSubmit === 'function' && !isChatgptApp) {
                 this.requestSubmit();
             } else {
                 _originalFormSubmitMethod.call(this)
@@ -12465,6 +12467,66 @@ var JotForm = {
                 const agentMethods = window.AgentInitializer.init(helperAgentProps);
                 window.embeddedAgentMethods = agentMethods;
               }
+        }
+    },
+
+    addFakeData: function (baseScriptURL) {
+        const fillFormWithFakeDataURL = baseScriptURL + '/s/static/latest/js/fillFormWithFakeData.js?rev=' + new Date().getTime();
+        const highLightAnimationStyle = document.createElement('style');
+        highLightAnimationStyle.textContent = `
+            .ai-highlight-animation-on-form-questions li {
+            background: linear-gradient(276.14deg, rgba(151, 71, 255, 0) 3.16%, rgba(151, 71, 255, 0.13) 56.16%, rgba(151, 71, 255, 0) 93.12%) no-repeat;
+            background-position-x: -668px;
+            animation: ai-highlight-animation 2s forwards;
+            animation-delay: 1s;
+            }
+
+            @keyframes ai-highlight-animation {
+            0% {
+                background-position-x: -668px;
+            }
+            100% {
+                background-position-x: 668px;
+            }
+            }
+        `;
+        document.head.appendChild(highLightAnimationStyle);
+        const script = document.createElement('script');
+        script.type = 'module';
+        script.src = fillFormWithFakeDataURL;
+        script.onload = function() {
+            if (window.fillFormWithFakeData) {
+                window.fillFormWithFakeData();
+                const questionListContainer = document.querySelector('.form-section.page-section');
+                if (questionListContainer) {
+                questionListContainer.classList.add('ai-highlight-animation-on-form-questions');
+                }
+            }
+            setTimeout(() => {
+                const questionListContainer = document.querySelector('.form-section.page-section');
+                if (questionListContainer) {
+                questionListContainer.classList.remove('ai-highlight-animation-on-form-questions');
+                }
+            }, 4500);
+        };
+        document.body.appendChild(script);
+    },
+
+    initWithFakeData: function () {
+        try {
+            const urlParams = new URLSearchParams(window.location.search);
+            const initFormWithFakeData = urlParams.get("initWithFakeData");
+
+            let baseScriptURL = 'https://cdn.jotfor.ms';
+            if (JotForm.enterprise || window.location.href.indexOf('jotform.pro') > -1) {
+                baseScriptURL = window.location.origin;
+            }
+
+            if (initFormWithFakeData === "1") {
+                this.addFakeData(baseScriptURL);
+            }
+        } catch (error) {
+            console.error(error)
         }
     },
 
@@ -12964,14 +13026,6 @@ var JotForm = {
                     window.parent.postMessage("removeIframeOnloadAttr", '*');
                 }
 
-                if(getQuerystring('itemCatalog') === '1') {
-                    const hasPaymentInLegacy = Boolean(document.querySelector('[data-payment="true"]'));
-                    const hasPaymentInCard = Boolean(document.querySelector('[data-payment="newpayment"]'));
-                    if (hasPaymentInLegacy || hasPaymentInCard) {
-                        this.loadStyleSheet('../css/styles/payment/payment_ai_catalog.css');
-                    }
-                }
-
                 // eslint-disable-next-line no-var
                 var inputSimpleFpc = document.querySelector('input[name="simple_fpc"]');
                 if (inputSimpleFpc) {
@@ -13095,6 +13149,17 @@ var JotForm = {
                     this.setIFrameDeviceType();
                     this.handleIFrameHeight();
 
+                    window.addEventListener('message', function (event) {
+                        const { action, baseURL } = event.data || {};
+                        if (action === 'addFakeData') {
+                            let baseScriptURL = 'https://cdn.jotfor.ms';
+                            if (JotForm.enterprise || window.location.href.indexOf('jotform.pro') > -1) {
+                                baseScriptURL = window.location.origin;
+                            }
+                            JotForm.addFakeData(baseURL || baseScriptURL);
+                        }
+                    });
+
                     // if there is a recaptcha
                     // eslint-disable-next-line no-var
                     var visibleCaptcha = document.querySelector('li[data-type="control_captcha"]:not(.always-hidden)');
@@ -13148,6 +13213,7 @@ var JotForm = {
                 }
                 this.handleHighlightMatchedQuestions();
                 this.handleWidgetMessage();
+                this.handleParentSubmitMessage();
                 this.setButtonActions();
                 this.initGradingInputs();
                 this.initSpinnerInputs();
@@ -13228,6 +13294,7 @@ var JotForm = {
                 this.adjustWorkflowFeatures();
                 this.handleWorkflowInternalForm();
                 this.generatePaymentTransactionId();
+                this.initWithFakeData();
                 // eslint-disable-next-line no-undef
                 calculateTimeToSubmit();
                 this.setDataCSSSelector();
@@ -13271,6 +13338,14 @@ var JotForm = {
 
                 if (this.isWorkflowForm) {
                     this.setupWorkflowOutcomes();
+                }
+
+                if (getQuerystring('showAllHiddenFields') == '1') {
+                    this.showAllHiddenFields();
+                }
+
+                if (getQuerystring('showAllHiddenPages') == '1') {
+                    this.showAllHiddenPages();
                 }
 
                 // when a form is embedded via a 3rd party app
@@ -14096,7 +14171,7 @@ var JotForm = {
             // eslint-disable-next-line no-var
             var script = document.createElement('script');
             script.type = "text/javascript";
-            script.src = "/js/vendor/json2.js";
+            script.src = "/s/static/latest/js/vendor/json2.js";
             document.body.appendChild(script);
         }
     },
@@ -14302,10 +14377,36 @@ var JotForm = {
                         var errorMsg = `The following file(s) have an invalid extension: ${invalidFiles.join(', ')}. ` +
                                        `Allowed types: ${allowedExtensions.join(', ')}.`;
                         return JotForm.errored(parent, errorMsg);
-                    } else {
-                        JotForm.corrected(parent);
-                        return true;
                     }
+
+                    let sizeLimitActive = fileInput.getAttribute('data-limit-file-size') || fileInput.getAttribute('limit-file-size');
+                    let maxFileSizeKB = parseInt((fileInput.getAttribute('data-file-maxsize') || fileInput.getAttribute('file-maxsize')), 10);
+
+                    if (sizeLimitActive !== 'No' && maxFileSizeKB > 0) {
+                        let maxFileSize = maxFileSizeKB * 1024;
+                        let oversizedFiles = [];
+
+                        for (let j = 0; j < files.length; j++) {
+                            let fileToCheck = files[j];
+                            if (fileToCheck.size > maxFileSize) {
+                                let fileSizeMB = (fileToCheck.size / (1024 * 1024)).toFixed(2);
+                                oversizedFiles.push({
+                                    name: fileToCheck.name,
+                                    size: fileSizeMB + 'MB'
+                                });
+                            }
+                        }
+
+                        if (oversizedFiles.length > 0) {
+                            let maxSizeFormatted = (maxFileSize / (1024 * 1024)).toFixed(2) + 'MB';
+
+                            let fileSizeErrorMsg = `The following file(s) exceed the ${maxSizeFormatted} size limit: ${oversizedFiles.map(f => `${f.name} (${f.size})`).join(', ')}`;
+                            return JotForm.errored(parent, fileSizeErrorMsg);
+                        }
+                    }
+
+                    JotForm.corrected(parent);
+                    return true;
                 }
 
                 // eslint-disable-next-line no-var
@@ -14635,7 +14736,7 @@ var JotForm = {
             formSavingIndicatorEl.className = 'form-saving-indicator';
             formSavingIndicatorEl.style.float = 'right';
             formSavingIndicatorEl.style.padding = '21px 12px 10px';
-            formSavingIndicatorEl.innerHTML = '<img src="' + JotForm.url + 'images/ajax-loader.gif" align="absmiddle" /> Saving...';
+            formSavingIndicatorEl.innerHTML = '<img src="' + JotForm.url + 'assets/v3/images/ajax-loader.gif" align="absmiddle" /> Saving...';
 
             JotForm.currentSection.querySelector(selectPageBreak).appendChild(formSavingIndicatorEl);
         }
@@ -17635,6 +17736,16 @@ var JotForm = {
         }
 
         return elemShown;
+    },
+
+    showAllHiddenFields: function () {
+        JotForm.conditions = [];
+        JotForm.fieldConditions = {};
+
+        $$('.always-hidden, .form-field-hidden').each(function(el) {
+            const id = el.getAttribute('id').split('_')[1];
+            JotForm.showField(id);
+        });
     },
 
     collectStylesheet: function () {
@@ -26250,7 +26361,7 @@ var JotForm = {
      * @param {Object} id
      */
     reloadCaptcha: function (id) {
-        document.querySelector(`#${id}_captcha`).src = JotForm.url + 'images/blank.gif';
+        document.querySelector(`#${id}_captcha`).src = JotForm.url + 'assets/v3/images/blank.gif';
         JotForm.initCaptcha(id);
     },
     /**
@@ -26443,6 +26554,73 @@ var JotForm = {
             document.head.appendChild(style);
         }
 
+        const setIsManuelSelected = (value) => {
+            window.isManuelSelected = value;
+        };
+
+        window.addEventListener('wheel', () => setIsManuelSelected(false), { passive: true });
+
+        const handleQuestionObserver = () => {
+            const options = {
+                threshold: 0.7
+            };
+
+            const visibleQuestions = new Set();
+            let currentSelectedId = null;
+
+            window.formQuestionObserver = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        visibleQuestions.add(entry.target);
+                    } else {
+                        visibleQuestions.delete(entry.target);
+                    }
+                });
+
+                let topmost = null;
+                let minTop = Infinity;
+
+                if(window.isManuelSelected) return;
+
+                visibleQuestions.forEach(el => {
+                    const rect = el.getBoundingClientRect();
+                    if (rect.top < minTop) {
+                        minTop = rect.top;
+                        topmost = el;
+                    }
+                });
+
+                if (topmost) {
+                    const element = topmost;
+                    let questionId = '';
+                    if (isCardForm) {
+                        const questionWrapper = element.closest('.form-line');
+                        questionId = questionWrapper ? questionWrapper.id.replace('id_', '') : '';
+                    } else {
+                        questionId = element.id.replace('id_', '');
+                    }
+
+                    if (currentSelectedId !== questionId) {
+                        currentSelectedId = questionId;
+
+                        document.querySelectorAll('.matched-question.selected').forEach(el => {
+                            el.classList.remove('selected');
+                        });
+                        element.classList.add('selected');
+
+                        if (window.parent && window.parent !== window && questionId) {
+                            window.parent.postMessage({
+                                action: 'matchedQuestionClicked',
+                                questionId: questionId
+                            }, '*');
+                        }
+                    }
+                }
+            }, options);
+
+            document.querySelectorAll('.matched-question').forEach(el => window.formQuestionObserver.observe(el));
+        }
+
         window.addEventListener("message", function (event) {
             try {
                 const { data } = event;
@@ -26459,9 +26637,13 @@ var JotForm = {
                             questionElement.classList.add('matched-question');
                         }
                     });
+
+                    handleQuestionObserver();
                 }
 
                 if (data && data.action === 'selectSelectedMatchedQuestion' && !isCardForm) {
+                    setIsManuelSelected(true);
+
                     document.querySelectorAll('.matched-question.selected').forEach(el => {
                         el.classList.remove('selected');
                     });
@@ -26469,7 +26651,7 @@ var JotForm = {
                     const questionId = data.questionId;
                     const questionElement = document.getElementById('id_' + questionId);
                     if (questionElement) {
-                        const pageSection = questionElement.closest('.page-section');             
+                        const pageSection = questionElement.closest('.page-section');
                         if (pageSection) {
                             const allSections = Array.from(document.querySelectorAll('.page-section'));
                             const pageIndex = allSections.indexOf(pageSection);
@@ -26520,9 +26702,13 @@ var JotForm = {
                             questionElement.classList.add('matched-question');
                         }
                     });
+
+                    handleQuestionObserver();
                 }
 
                 if(data && data.action === 'selectSelectedMatchedQuestion' && isCardForm) {
+                    setIsManuelSelected(true);
+
                     document.querySelectorAll('.matched-question.selected').forEach(el => {
                         el.classList.remove('selected');
                     });
@@ -26537,6 +26723,16 @@ var JotForm = {
                             block: 'center',
                             inline: 'nearest'
                         });
+                    }
+                }
+
+                if (data && data.action === 'toggleMatchedQuestionObserver') {
+                    if (data.isActive) {
+                        handleQuestionObserver()
+                    } else {
+                        if (window.formQuestionObserver) {
+                            window.formQuestionObserver.disconnect();
+                        }
                     }
                 }
             } catch (e) {
@@ -26555,6 +26751,11 @@ var JotForm = {
                 } else {
                     questionId = matchedQuestion.id.replace('id_', '');
                 }
+
+                document.querySelectorAll('.matched-question.selected').forEach(el => {
+                    el.classList.remove('selected');
+                });
+                matchedQuestion.classList.add('selected');
 
                 if (window.parent && window.parent !== window) {
                     window.parent.postMessage({
@@ -26601,6 +26802,28 @@ var JotForm = {
                 console.error('ErrorOnHandleWigetMessage', e);
             }
         }, false);
+    },
+
+    handleParentSubmitMessage: function () {
+        if (window.self === window.parent) {
+            return;
+        }
+        window.addEventListener("message", function (event) {
+            try {
+                const { data: { action, source } = {} } = event || {};
+                if (source !== 'form-builder') {
+                    return;
+                }
+                if (action === 'submit-form') {
+                    const form = JotForm && JotForm.forms && JotForm.forms[0] ? JotForm.forms[0] : false;
+                    if (form) {
+                        form.submit();
+                    }
+                }
+            } catch (e) {
+                console.error('ErrorOnHandleParentSubmitMessage', e);
+            }
+        });
     },
     // Bug fix :: 3409477 (Terms & Conditions + Section Collapse Bug) & 3765441 (Section Collapse disappears when tabbed over)
     widgetSectionCollapse: function(qid) {
@@ -28140,6 +28363,8 @@ var JotForm = {
         var pages = [];
         // eslint-disable-next-line no-var
         var last;
+        const queryParameters = new URLSearchParams(window.location.search);
+        const isVerticalLayout = queryParameters.get('verticalLayout') === '1';
 
         // 345261: by default, back button containers gets its width from the label to maintain alignment
         // if they are wider than half the form, resize them
@@ -28209,6 +28434,9 @@ var JotForm = {
             var form = JotForm.getForm(section)
             section.querySelectorAll('.form-pagebreak-next').forEach(el => {
                 el.addEventListener('click', () => {
+                    if (isVerticalLayout) {
+                        return;
+                    }
                     if (JotForm.saving || JotForm.loadingPendingSubmission) {
                         return;
                     }
@@ -28306,6 +28534,9 @@ var JotForm = {
 
             section.querySelectorAll('.form-pagebreak-back').forEach(el => { // When back button is clicked
                 el.addEventListener('click', () => {
+                    if (isVerticalLayout) {
+                        return;
+                    }
                     if (!$this.noJump && window.parent && window.parent != window) {
                         window.parent.postMessage('scrollIntoView::'+form.id, '*');
                     }
@@ -28470,6 +28701,12 @@ var JotForm = {
                     JotForm.nextPage = false;
                 });
             }
+
+            if (isVerticalLayout) {
+                allSections.forEach(section => {
+                    section.style.display = 'block';
+                });
+            }
         }
     },
     /**
@@ -28624,6 +28861,14 @@ var JotForm = {
             }
         }
         return section;
+    },
+    showAllHiddenPages: function () {
+        JotForm.conditions = [];
+        JotForm.fieldConditions = {};
+
+        $$('.form-section, .page-section').each(function(section) {
+            JotForm.showFormSection(section);
+        });
     },
     getDimensions: element => {
         const computedStyles = window.getComputedStyle(element);
@@ -28906,7 +29151,17 @@ var JotForm = {
      */
 
     handleAuthNet: function () {
-        this.PCIGatewaysCardInputValidate();
+      this.PCIGatewaysCardInputValidate();
+      const testForms = ['253512712092046', '253512042793050', '253512222595050', '253512679519062'];
+      if (testForms.includes(this.getFormId()) && !!JotForm.hasAuthnetClientKey) {
+				if (typeof __authnet === "function") {
+					// eslint-disable-next-line no-undef
+					JotForm.authnetPayment = __authnet();
+					JotForm.authnetPayment.init();
+				} else{
+					alert("Authnet payment script didn't work properly. Form will be reloaded");
+				}
+			}
     },
 
     handleBluesnap: function() {
@@ -29976,12 +30231,12 @@ var JotForm = {
             if (!collapse.errored) {
               if(JotForm.newDefaultTheme){
                 collapse.select(".form-collapse-mid")[0].insert({
-                  top: '<img width="30px" height= "30px" src="' + preLink + 'images/exclamation-octagon.png"> ' // image may change for new theme
+                  top: '<img width="30px" height= "30px" src="' + preLink + 'assets/v3/images/exclamation-octagon.png"> ' // image may change for new theme
               }).setStyle({color: 'red'});
               }
               else{
                 collapse.select(".form-collapse-mid")[0].insert({
-                  top: '<img src="' + preLink + 'images/exclamation-octagon.png"> '
+                  top: '<img src="' + preLink + 'assets/v3/images/exclamation-octagon.png"> '
               }).setStyle({color: 'red'});
               }
               collapse.errored = true;
@@ -30049,7 +30304,7 @@ var JotForm = {
         formErrorArrowEl.appendChild(formErrorArrowInnerEl);
 
         // eslint-disable-next-line no-undef
-        insertEl.insert(formErrorMessageEl.insert('<img src="' + preLink + 'images/exclamation-octagon.png"> ').insert(error_message_span).insert(formErrorArrowEl));
+        insertEl.insert(formErrorMessageEl.insert('<img src="' + preLink + 'assets/v3/images/exclamation-octagon.png"> ').insert(error_message_span).insert(formErrorArrowEl));
 
         JotForm.iframeHeightCaller();
         JotForm.updateErrorNavigation();
@@ -30315,6 +30570,9 @@ var JotForm = {
             // eslint-disable-next-line no-var
             var handleFormSubmit = function (e) {
                 try {
+                    if (window && window !== window.parent) {
+                        window.parent.postMessage({ action: 'submission-started' });
+                    }
                     trackSubmitSource('form');
 
                     if ($('payment_total_checksum')) {
@@ -30543,6 +30801,14 @@ var JotForm = {
                         window.localStorage.removeItem(saclKey);
                     }
 
+                    if (window && window !== window.parent) {
+                        const params = new URLSearchParams(window.location.search);
+                        if (params.get('app') === 'chatgpt') {
+                            const formData = new FormData(form);
+                            window.parent.postMessage({ action: 'form-submit-request', data: formData, submitUrl: form.action });
+                        }
+                        window.parent.postMessage({ action: 'submission-end' });
+                    }
                 } catch (err) {
                     JotForm.error(err);
                     e.stop();
@@ -32716,7 +32982,7 @@ var JotForm = {
                 JotForm.showField(qid);
             }
             // eslint-disable-next-line no-undef
-            new nicEditor({iconsPath : location.protocol + '//www.jotform.com/images/nicEditorIcons.gif?v2'}).panelInstance('input_' + qid);
+            new nicEditor({iconsPath : location.protocol + '//www.jotform.com/assets/v3/images/nicEditorIcons.gif?v2'}).panelInstance('input_' + qid);
             JotForm.updateAreaFromRich(field);
             // hide again the initially hidden rich textarea after setup
             if (isFieldHidden) {
