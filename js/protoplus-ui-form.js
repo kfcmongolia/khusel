@@ -1,4 +1,4 @@
-/* eslint-disable */
+/// <reference path="./jotform.js" />
 /**
  * UI Elements used in forms
  * this file is a sub document of protoplus-ui file
@@ -900,11 +900,29 @@ Protoplus.ui = {
         spinnerTable.insert(inputCont = new Element('div', {className: 'form-spinner-input-td'}).insert(element));
         // Construct the arrow button container
         spinnerTable.insert(arrowCont = new Element('div',  {className: 'form-spinner-button-container'}));
-        // Construct the up arrow
-        arrowCont.insert(upTD = new Element('div', {className: 'form-spinner-button form-spinner-up'}).insert(upArrow = new Element('img', {className: 'form-spinner-image form-spinner-up-image', src:options.iconPath, alt:'up arrow'})));
+        var buttonResetStyle = { margin: 0, padding: 0, border: 0, font: 'inherit', color: 'inherit', 'outline': 'none' };
         // Construct the down arrow
-        arrowCont.insert(downTD = new Element('div', {className: 'form-spinner-button form-spinner-down'}).insert(downArrow = new Element('img', {className: 'form-spinner-image form-spinner-down-image', src:options.iconPath, alt:'down arrow'})));
-
+        arrowCont.insert(downTD = new Element('button', {className: 'form-spinner-button form-spinner-down'}).insert(downArrow = new Element('img', {className: 'form-spinner-image form-spinner-down-image', src:options.iconPath, alt:'down arrow'})));
+        downTD.setStyle(buttonResetStyle);
+        downTD.setAttribute('aria-label', 'Decrease');
+        downTD.setAttribute('type', 'button');
+        downTD.setAttribute('tabindex', '-1');
+        downTD.observe('click', function(e){
+            setTimeout(() => {
+                JotForm.setAriaStatus && JotForm.setAriaStatus(element.value);
+            }, 50);
+        });
+        // Construct the up arrow
+        arrowCont.insert(upTD = new Element('button', {className: 'form-spinner-button form-spinner-up'}).insert(upArrow = new Element('img', {className: 'form-spinner-image form-spinner-up-image', src:options.iconPath, alt:'up arrow'})));
+        upTD.setStyle(buttonResetStyle);
+        upTD.setAttribute('aria-label', 'Increase');
+        upTD.setAttribute('type', 'button');
+        upTD.setAttribute('tabindex', '-1');
+        upTD.observe('click', function(e){
+            setTimeout(() => {
+                JotForm.setAriaStatus && JotForm.setAriaStatus(element.value);
+            }, 50);
+        });
         var spinnerTableWidth = (options && options.width >= 180 ? options.width : 180)+'px';
         spinnerTable.setStyle({ width:spinnerTableWidth });
 
