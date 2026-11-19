@@ -13,21 +13,81 @@
     scrollToBottomOnClose: true,
   };
 
-  function getMessage() {
+  // Banner texts come from form owners and translations, so they are parsed in an
+  // inert document and only their text reaches the page.
+  function plainText(html) {
+    var doc = new DOMParser().parseFromString(String(html || ''), 'text/html');
+    return doc.body.textContent || '';
+  }
+
+  // The required asterisk is a span inside the label; it is aria-hidden, but
+  // textContent still includes it.
+  function labelText(label) {
+    var clone = label.cloneNode(true);
+    var marks = clone.querySelectorAll('.form-required');
+    for (var i = 0; i < marks.length; i += 1) {
+      marks[i].parentNode.removeChild(marks[i]);
+    }
+    return clone.textContent || '';
+  }
+
+  function fieldName(line) {
+    var label = line.querySelector('.form-label, legend');
+    var text = label ? labelText(label) : '';
+    if (!String(text).trim()) {
+      var widget = line.querySelector('[data-component="widget-field"]');
+      if (widget) {
+        text = widget.getAttribute('aria-label') || '';
+        if (!text) {
+          var labelledBy = widget.getAttribute('aria-labelledby') || '';
+          var labelId = labelledBy.split(/\s+/)[0];
+          var labelFromId = labelId && document.getElementById(labelId);
+          text = labelFromId ? labelText(labelFromId) : '';
+        }
+      }
+    }
+    return String(text).replace(/\s+/g, ' ').trim();
+  }
+
+  function renderMessage(message) {
+    if (!message) return;
+    while (message.firstChild) {
+      message.removeChild(message.firstChild);
+    }
+
     if (state.errors.length <= 0) {
-      return JotForm.texts.doneMessage;
+      message.appendChild(document.createTextNode(plainText(JotForm.texts.doneMessage)));
+      return;
     }
 
-    var msg="";
-    if (state.errors.length === 1) {
-      msg = JotForm.texts.oneError;
-    }
-    else{
-      msg = JotForm.texts.multipleError;
+    const text = plainText(state.errors.length === 1 ? JotForm.texts.oneError : JotForm.texts.multipleError);
+    const countIndex = text.indexOf('{count}');
+    if (countIndex === -1) {
+      message.appendChild(document.createTextNode(text));
+    } else {
+      const count = document.createElement('strong');
+      count.textContent = String(state.errors.length);
+      message.appendChild(document.createTextNode(text.substring(0, countIndex)));
+      message.appendChild(count);
+      message.appendChild(document.createTextNode(text.substring(countIndex + '{count}'.length)));
     }
 
-    msg = msg.replace('{count}', '<strong>' + state.errors.length + '</strong>');
-    return msg;
+    const names = [];
+    for (let i = 0; i < state.errors.length; i += 1) {
+      const name = fieldName(state.errors[i]);
+      if (name) {
+        names.push(name);
+      }
+    }
+    // Screen reader only: the banner is fixed to the top of the viewport with no
+    // max height, so a visible list covers the form when many fields fail.
+    if (names.length > 0) {
+      const end = /[.?!:;]$/.test(names[names.length - 1]) ? '' : '.';
+      const srOnly = document.createElement('span');
+      srOnly.className = 'sr-only';
+      srOnly.textContent = `${' ' + names.join(', ') + end}`;
+      message.appendChild(srOnly);
+    }
   }
 
   function createNavigation(section) {
@@ -113,6 +173,11 @@
     state.current = nextCurrent;
     line.scrollIntoView({ behavior: 'smooth', block: 'center' });
     field.focus();
+    // VoiceOver in Chrome does not follow focus from a widget iframe into the frame.
+    const widgetMatch = field.tagName === 'IFRAME' && /^customFieldFrame_(\d+)$/.exec(field.id);
+    if (widgetMatch && typeof JotForm.focusWidget === 'function') {
+      JotForm.focusWidget(widgetMatch[1]);
+    }
     nextButton.disabled = false;
   }
 
@@ -245,11 +310,23 @@
     }, 100);
   }
 
+  // FormTranslation dispatches `translationLoad` after JotForm.texts and the field
+  // labels are translated, so rebuild the visible banner message from them
+  // instead of relying on a reverse lookup of the already rendered HTML.
+  document.addEventListener('translationLoad', function() {
+    if (!state.section) {
+      return;
+    }
+    var nav = state.section.querySelector('.error-navigation-container');
+    var message = nav && nav.querySelector('.error-navigation-message');
+    renderMessage(message);
+  });
+
   return {
     disableScrollToBottom: function disableScrollToBottom() {
       state.scrollToBottomOnClose = false;
     },
-    update: function update(section, render) {
+    update: function update(section, render, focusSummary) {
       if (!section) {
         var sections = document.querySelectorAll('.form-section.page-section');
         if (sections.length <= 0) {
@@ -276,21 +353,12 @@
       state.errors = invalidFields;
 
       var nav = state.section.querySelector('.error-navigation-container');
-      var newlyCreated = false;
       if (!nav) {
         if (!render) {
           return;
         }
         nav = createNavigation(state.section);
-        newlyCreated = true;
       }
-
-      // Focus only on the no-banner → banner transition. update() also runs on
-      // revalidation while typing; stealing focus then would be worse than the
-      // original defect.
-      var shouldFocusSummary = newlyCreated
-        || nav.getAttribute('aria-hidden') === 'true'
-        || nav.style.display === 'none';
 
       if (state.errors.length > 0) {
         nav.querySelector('.error-navigation-next-button').style.display = 'block';
@@ -302,14 +370,18 @@
         nav.querySelector('.error-navigation-done-button').style.display = 'block';
       }
 
-      nav.querySelector('.error-navigation-message').innerHTML = getMessage();
+      renderMessage(nav.querySelector('.error-navigation-message'));
 
       // show navigation
       nav.style.display = null;
       nav.setAttribute('aria-hidden', 'false');
       nav.classList.remove('fading-out');
 
-      if (shouldFocusSummary && state.errors.length > 0 && typeof nav.focus === 'function') {
+      // Field blur and correction also call update(), so the banner can announce
+      // through role=alert without pulling focus off the field. Next and Submit
+      // pass focusSummary so the summary receives focus even when it is already
+      // on screen.
+      if (focusSummary && state.errors.length > 0 && typeof nav.focus === 'function') {
         nav.focus();
       }
     },

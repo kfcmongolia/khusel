@@ -46,6 +46,8 @@ Calendar.MONTH_NAMES = [
 
 Calendar.TODAY = "Today";
 
+Calendar.KEYBOARD_HINT = 'Press Space to make a selection, and use Enter or Esc to confirm.';
+
 Calendar.SHORT_MONTH_NAMES = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov',
   'Dec' 
@@ -156,8 +158,11 @@ function handlePopupUI(calendar, style) {
         calendarNewMonth.querySelector('select.calendar-month-select').value = month;
         calendarNewYear.querySelector('select.calendar-year-select').value = year;
       } else {
-        calendarNewMonth.querySelector('.calendar-new-month-text').innerHTML = month;
-        calendarNewYear.querySelector('.calendar-new-year-text').innerHTML = year;
+        // These are live regions; rewriting unchanged text re-announces it after every selection.
+        const monthText = calendarNewMonth.querySelector('.calendar-new-month-text');
+        const yearText = calendarNewYear.querySelector('.calendar-new-year-text');
+        if (monthText.textContent !== month) monthText.textContent = month;
+        if (yearText.textContent !== String(year)) yearText.textContent = year;
       }
     } else {
       // Helper function to create popup header elements
@@ -395,7 +400,10 @@ Calendar.setup = function(params)
     
     triggerElement.addEventListener('keydown', (e) => {
       e.stopPropagation();
-      if (e.key === 'Enter' | e.key === ' ') {
+      if (e.key === 'Enter' || e.key === ' ') {
+        // Focus moves into the grid before the key's default action, which would
+        // otherwise activate the focused day and commit it.
+        e.preventDefault();
         triggerCalender(e);
       }
     });
@@ -463,24 +471,29 @@ Calendar.setup = function(params)
   }
 
   try {
-    var getDateFromField = function() {
+    const getDateFromField = function() {
       if(calendar.dateField.id) {
-        var id = calendar.dateField.id.replace("year_", "");
+        const id = calendar.dateField.id.replace("year_", "");
         if(!$('month_' + id)) return new Date();
         if (id) {
           calendar.id = id;
         }
-        var month = $('month_' + id) ? parseInt($('month_' + id).value)-1 : -1;
-        var day = $('day_' + id).value;
-        var year = $('year_' + id).value;
-        
-        if(month > -1 && day && day !== "" && year && year !== "") {
-          var dat = new Date(year, month, day, 0, 0, 0);
-          if(!calendar.date.equalsTo(dat)) {
-            calendar.date = dat;
+        const month = parseInt($('month_' + id).value, 10) - 1;
+        const day = $('day_' + id).value;
+        const year = $('year_' + id).value;
+
+        if (month > -1 && day && year) {
+          const date = new Date(year, month, day, 0, 0, 0);
+          calendar.selectedDate = new Date(date);
+          if (!calendar.date.equalsTo(date)) {
+            calendar.date = date;
             calendar.update(calendar.date);
+            return;
           }
+        } else {
+          calendar.selectedDate = null;
         }
+        calendar.syncSelection();
       }
     };
     getDateFromField();
@@ -520,6 +533,7 @@ Calendar.prototype = {
 
   // Dates
   date: new Date(),           // The date that the calendar is currently being displayed around
+  selectedDate: null,         // The committed date; arrow keys move `date` without changing it
   focusedDay: null,           // Reference to the day grid element for the currently focused day
   currentDateElement: null,   // Reference to the day grid element for the currently selected day that matches the date inputs value
   dateField: null,            // Reference to the input element that the calendar is associated with
@@ -677,27 +691,19 @@ Calendar.prototype = {
         row.setAttribute('role', 'row');
         row.immediateDescendants().each(
           function(cell, j) {
-            var day            = date.getDate();
-            var dayOfWeek      = date.getDay();
-            var isCurrentMonth = (date.getMonth() == month);
-            var cellDate = new Date(date);
-            var daySpan = new Element('span');
-            daySpan.setAttribute('aria-hidden', true);
-            daySpan.update(day);
+            const day = date.getDate();
+            const dayOfWeek = date.getDay();
+            const isCurrentMonth = date.getMonth() === month;
+            const cellDate = new Date(date);
+            const button = cell.dayButton || calendar.createDayButton(cell);
 
-            var button = new Element('button', {
-              tabindex: -1,
-              role: 'button',
-              'aria-pressed': false,
-              'data-date': cellDate.toLocaleDateString("en-US"),
-              'aria-label': cellDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }),
-              style: 'pointer-events: none; padding: 0; border: none; background: none; cursor: pointer; color: inherit;',
-            });
-            button.addEventListener('focus', () => cell.addClassName('selected'));
-            button.addEventListener('blur', () => cell.removeClassName('selected'));
-            button.addEventListener('keydown', calendar.onDayKeydown);
-            button.appendChild(daySpan);
-            cell.update(button);
+            button.firstChild.textContent = day;
+            button.dataset.date = cellDate.toLocaleDateString('en-US');
+            // The grid is named with the month and year, so days in it only carry their weekday and number.
+            // Leading and trailing days belong to the adjacent month, so they keep it.
+            const dayLabel = `${Calendar.DAY_NAMES[dayOfWeek]} ${day}`;
+            button.setAttribute('aria-label', isCurrentMonth ? dayLabel : `${dayLabel} ${Calendar.MONTH_NAMES[cellDate.getMonth()]}`);
+            button.removeAttribute('aria-current');
 
             // Reset classes on the cell
             cell.className = '';
@@ -715,12 +721,8 @@ Calendar.prototype = {
             // Ensure the current day is selected
             if (isCurrentMonth && day == dayOfMonth) {
               cell.addClassName('selected');
-              cell.setAttribute('aria-selected', true);
-              button.setAttribute('aria-pressed', true);
               calendar.currentDateElement = cell;
               calendar.setFocusedDay(button);
-            } else {
-              cell.setAttribute('aria-selected', false);
             }
             
             var allDays = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
@@ -891,6 +893,118 @@ Calendar.prototype = {
     if (this.table) {
       this.table.setAttribute('aria-label', Calendar.MONTH_NAMES[month] + ' ' + this.date.getFullYear());
     }
+
+    this.syncSelection();
+  },
+
+  /**
+   * Day buttons persist across redraws. Replacing a focused button makes screen readers
+   * announce the lost focus and the re-focus as two separate moves.
+   */
+  createDayButton: function(cell) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.tabIndex = -1;
+    button.style.cssText = 'pointer-events: none; padding: 0; border: none; background: none; cursor: pointer; color: inherit;';
+
+    const dayNumber = document.createElement('span');
+    dayNumber.setAttribute('aria-hidden', 'true');
+    button.appendChild(dayNumber);
+
+    button.addEventListener('focus', () => {
+      cell.classList.add('selected');
+      if (this.describeNextFocus) {
+        this.describeNextFocus = false;
+        button.setAttribute('aria-describedby', this.keyboardHintId);
+      }
+    });
+    button.addEventListener('blur', () => {
+      cell.classList.remove('selected');
+      button.removeAttribute('aria-describedby');
+    });
+    button.addEventListener('keydown', this.onDayKeydown);
+
+    cell.textContent = '';
+    cell.appendChild(button);
+    cell.dayButton = button;
+    return button;
+  },
+
+  /**
+   * Describes the first day focused after each open, so the day names can stay short.
+   * VoiceOver does not read a description on the grid itself when a day takes focus.
+   * Hidden content still contributes to aria-describedby.
+   */
+  createKeyboardHint: function() {
+    Calendar.hintCount = (Calendar.hintCount || 0) + 1;
+
+    const hint = document.createElement('span');
+    hint.id = `calendar-keyboard-hint-${Calendar.hintCount}`;
+    hint.hidden = true;
+    hint.textContent = Calendar.KEYBOARD_HINT;
+
+    this.keyboardHintId = hint.id;
+    return hint;
+  },
+
+  /**
+   * Opening starts from the committed date, not wherever the arrow keys last left focus.
+   */
+  restoreSelectedDate: function() {
+    if (this.selectedDate && !this.isSelectedDate(this.date)) {
+      this.setDate(new Date(this.selectedDate));
+      this.checkPastAndFuture();
+    }
+  },
+
+  isSelectedDate: function(date) {
+    return !!this.selectedDate && !!date && date.toDateString() === this.selectedDate.toDateString();
+  },
+
+  /**
+   * Records the committed date. Pressed and selected only ever describe this date, never the focused one.
+   */
+  setSelectedDate: function(date) {
+    this.selectedDate = date ? new Date(date) : null;
+    this.syncSelection();
+  },
+
+  syncSelection: function() {
+    if (!this.container) return;
+
+    this.container.querySelectorAll('td[role="gridcell"]').forEach(cell => {
+      const isSelected = this.isSelectedDate(cell.date);
+      cell.setAttribute('aria-selected', String(isSelected));
+      cell.dayButton?.setAttribute('aria-pressed', String(isSelected));
+    });
+  },
+
+  /**
+   * Arrow, Home/End and Page keys move focus only. Inside the shown month this is a single
+   * focus move with no redraw; leaving it redraws the existing buttons in place first.
+   */
+  moveFocusToDate: function(targetDate) {
+    const isShownMonth = targetDate.getMonth() === this.date.getMonth()
+      && targetDate.getFullYear() === this.date.getFullYear();
+
+    if (isShownMonth) {
+      const cell = Array.from(this.container.querySelectorAll('td[role="gridcell"]'))
+        .find(td => td.date && td.date.toDateString() === targetDate.toDateString());
+
+      if (cell?.dayButton) {
+        this.date.setDateOnly(targetDate);
+        this.currentDateElement?.classList.remove('selected');
+        this.currentDateElement = cell;
+        cell.classList.add('selected');
+        this.setFocusedDay(cell.dayButton);
+        cell.dayButton.focus();
+        return;
+      }
+    }
+
+    this.setDate(targetDate);
+    this.checkPastAndFuture();
+    this.focusedDay?.focus();
   },
 
   checkPastAndFuture: function() {
@@ -1003,11 +1117,11 @@ Calendar.prototype = {
 
     var checkLegacyForm = document.querySelectorAll('.calendar.popup[data-version="v2"]');
     if (checkLegacyForm && checkLegacyForm.length > 0) {
-      this._drawButtonCell(row, '<span class="calendar-arrow">&#x00ab;<svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24" class="w-32 h-32"><path fill-rule="evenodd" d="M4.293 8.293a1 1 0 0 1 1.414 0L12 14.586l6.293-6.293a1 1 0 1 1 1.414 1.414l-7 7a1 1 0 0 1-1.414 0l-7-7a1 1 0 0 1 0-1.414Z" clip-rule="evenodd"></path></svg></span>', 1, Calendar.NAV_PREVIOUS_YEAR, "previousYear");
-      this._drawButtonCell(row, '<span class="calendar-arrow">&#x2039;<svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24" class="w-32 h-32"><path fill-rule="evenodd" d="M4.293 8.293a1 1 0 0 1 1.414 0L12 14.586l6.293-6.293a1 1 0 1 1 1.414 1.414l-7 7a1 1 0 0 1-1.414 0l-7-7a1 1 0 0 1 0-1.414Z" clip-rule="evenodd"></path></svg></span>', 1, Calendar.NAV_PREVIOUS_MONTH, "previousMonth");
+      this._drawButtonCell(row, '<span class="calendar-arrow">&#x00ab;<svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24" class="w-32 h-32"><path fill-rule="evenodd" d="M4.293 8.293a1 1 0 0 1 1.414 0L12 14.586l6.293-6.293a1 1 0 1 1 1.414 1.414l-7 7a1 1 0 0 1-1.414 0l-7-7a1 1 0 0 1 0-1.414Z" clip-rule="evenodd"></path></svg></span>', 1, Calendar.NAV_PREVIOUS_YEAR, "previousYear", 'Previous Year');
+      this._drawButtonCell(row, '<span class="calendar-arrow">&#x2039;<svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24" class="w-32 h-32"><path fill-rule="evenodd" d="M4.293 8.293a1 1 0 0 1 1.414 0L12 14.586l6.293-6.293a1 1 0 1 1 1.414 1.414l-7 7a1 1 0 0 1-1.414 0l-7-7a1 1 0 0 1 0-1.414Z" clip-rule="evenodd"></path></svg></span>', 1, Calendar.NAV_PREVIOUS_MONTH, "previousMonth", 'Previous Month');
       this._drawButtonCell(row, Calendar.TODAY, 3, Calendar.NAV_TODAY, "todayButton");
-      this._drawButtonCell(row, '<span class="calendar-arrow">&#x203a;<svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24" class="w-32 h-32"><path fill-rule="evenodd" d="M11.293 7.293a1 1 0 0 1 1.414 0l7 7a1 1 0 0 1-1.414 1.414L12 9.414l-6.293 6.293a1 1 0 0 1-1.414-1.414l7-7Z" clip-rule="evenodd"></path></svg></span>', 1, Calendar.NAV_NEXT_MONTH, "nextMonth");
-      this._drawButtonCell(row, '<span class="calendar-arrow">&#x00bb;<svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24" class="w-32 h-32"><path fill-rule="evenodd" d="M11.293 7.293a1 1 0 0 1 1.414 0l7 7a1 1 0 0 1-1.414 1.414L12 9.414l-6.293 6.293a1 1 0 0 1-1.414-1.414l7-7Z" clip-rule="evenodd"></path></svg></span>', 1, Calendar.NAV_NEXT_YEAR, "nextYear");
+      this._drawButtonCell(row, '<span class="calendar-arrow">&#x203a;<svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24" class="w-32 h-32"><path fill-rule="evenodd" d="M11.293 7.293a1 1 0 0 1 1.414 0l7 7a1 1 0 0 1-1.414 1.414L12 9.414l-6.293 6.293a1 1 0 0 1-1.414-1.414l7-7Z" clip-rule="evenodd"></path></svg></span>', 1, Calendar.NAV_NEXT_MONTH, "nextMonth", 'Next Month');
+      this._drawButtonCell(row, '<span class="calendar-arrow">&#x00bb;<svg xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 24 24" class="w-32 h-32"><path fill-rule="evenodd" d="M11.293 7.293a1 1 0 0 1 1.414 0l7 7a1 1 0 0 1-1.414 1.414L12 9.414l-6.293 6.293a1 1 0 0 1-1.414-1.414l7-7Z" clip-rule="evenodd"></path></svg></span>', 1, Calendar.NAV_NEXT_YEAR, "nextYear", 'Next Year');
       table && table.addClassName('calendar-new-header-withSVG');
     } else {
       this._drawButtonCell(row, '<span class="calendar-arrow">&#x00ab;</span>', 1, Calendar.NAV_PREVIOUS_YEAR, "previousYear", 'Previous Year');
@@ -1073,6 +1187,7 @@ Calendar.prototype = {
       this.container.addClassName('extended');
     }
     this.container.appendChild(table);
+    this.container.appendChild(this.createKeyboardHint());
 
     // Initialize Calendar
     this.update(this.date);
@@ -1101,7 +1216,7 @@ Calendar.prototype = {
     cell.className    = 'button' + (extraClass ? " " + extraClass : "");
     cell.navAction    = navAction;
     cell.innerHTML    = text;
-    cell.ariaLabel    = ariaLabel;
+    if (ariaLabel) cell.setAttribute('aria-label', ariaLabel);
     cell.unselectable = 'on'; // IE
     cell.addEventListener('click', this.onNavigationClick);
     td.appendChild(cell)
@@ -1131,6 +1246,7 @@ Calendar.prototype = {
 
   // Calls the Select Handler (if defined)
   callSelectHandler: function() {
+    this.setSelectedDate(this.date);
     this.selectHandler?.(this, this.date.print(this.dateFormat));
 
     if (this.container.getAttribute('data-version') === 'v2') handlePopupUI(this);
@@ -1197,14 +1313,9 @@ Calendar.prototype = {
    */
   handleDaySelection: function(cell) {
     if (this.currentDateElement !== cell) {
-      // Clean up attributes of previously selected day cell
       this.currentDateElement?.classList.remove("selected");
-      this.currentDateElement?.setAttribute('aria-selected', false);
-
-      // Update the selected day cell
       this.currentDateElement = cell;
       this.currentDateElement.classList.add("selected");
-      this.currentDateElement.setAttribute('aria-selected', true);
     }
 
     // Update stored date
@@ -1218,8 +1329,7 @@ Calendar.prototype = {
   },
 
   /**
-   * Since navigation rebuilds the day grid, track the currently active day button on the instance
-   * so we can re-apply the focus state.
+   * Keeps a single day button in the tab order (roving tabindex).
    */
   setFocusedDay: function(button) {
     if (this.focusedDay === button) return;
@@ -1344,12 +1454,7 @@ Calendar.prototype = {
       default: return;
     }
 
-    // Re-draw the calendar around the target date and then recalculate disabled past/future controls.
-    this.setDate(targetDate);
-    this.checkPastAndFuture();
-
-    // The old button instance is destroyed during re-draw, so focus must hop to the new instance on the next tick.
-    setTimeout(() => this.focusedDay?.focus(), 0);
+    this.moveFocusToDate(targetDate);
 
     // Prevent page scroll and keep the keypress inside the date grid when the calendar handled it.
     event.preventDefault();
@@ -1491,6 +1596,9 @@ Calendar.prototype = {
   {
     // this.create();
     this.container.show();
+    // Every open path ends here (trigger button, auto-open on input focus, orientation change).
+    this.restoreSelectedDate();
+    this.describeNextFocus = true;
     this.makeAccessible = this.makeAccessible.bind(this);
     
     this.makeAccessible();
@@ -1527,11 +1635,19 @@ Calendar.prototype = {
     var x = firstPos[0] + 40;
     var y = firstPos[1] + 100 + getHeight(firstElement);
 
+    var isRTL = !!firstElement.closest('[data-form-direction="rtl"]');
+    var right = firstPos[0] + firstElement.offsetWidth - 40;
+
     if(element.id.match(/_pick$/)) {
       var elPos = getCumulativeOffset(element);
       var elX = elPos[0] - 140;
       if(elX > x) x = elX;
+      right = Math.min(right, elPos[0] + element.offsetWidth + 140);
       y = elPos[1] + 100 + getHeight(element);
+    }
+    if (isRTL) {
+      this.show();
+      x = right - this.container.offsetWidth;
     }
     this.showAt(x, y);
   },
@@ -1565,6 +1681,8 @@ Calendar.prototype = {
       format = this.dateFormat;        
     }
     this.setDate(Date.parseDate(str, format));
+    // An empty field has no committed date, even though the grid still opens on today.
+    this.setSelectedDate(str ? this.date : null);
   },
 
 
